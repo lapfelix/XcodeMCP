@@ -581,6 +581,26 @@ class XcodeMCPServer {
   }
 
   async run(commandLineArguments = []) {
+    // Get project path from open workspace in Xcode
+    const getProjectScript = `
+      const app = Application('Xcode');
+      const docs = app.workspaceDocuments();
+      if (docs.length === 0) throw new Error('No workspace document open');
+      
+      docs[0].path();
+    `;
+    
+    let projectPath;
+    try {
+      projectPath = await this.executeJXA(getProjectScript);
+    } catch (error) {
+      return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
+    }
+
+    // Get initial build log to compare timestamps
+    const initialLog = await this.getLatestBuildLog(projectPath);
+    const initialTime = Date.now();
+
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
       (function() {
@@ -596,8 +616,73 @@ class XcodeMCPServer {
       })()
     `;
     
-    const result = await this.executeJXA(script);
-    return { content: [{ type: 'text', text: result }] };
+    const runResult = await this.executeJXA(script);
+
+    // Wait for new build log to appear or existing one to be modified
+    let newLog = null;
+    let attempts = 0;
+    const maxAttempts = 60; // 30 seconds
+
+    while (attempts < maxAttempts) {
+      newLog = await this.getLatestBuildLog(projectPath);
+      
+      if (newLog && (!initialLog || newLog.path !== initialLog.path || 
+                     newLog.mtime.getTime() > initialTime)) {
+        break;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+
+    if (!newLog) {
+      return { content: [{ type: 'text', text: `${runResult}\n\nNote: Run triggered but no build log found (app may have launched without building)` }] };
+    }
+
+    // Wait for build to complete by monitoring log file stability
+    let lastModified = 0;
+    let stableCount = 0;
+    attempts = 0;
+    const buildMaxAttempts = 600; // 5 minutes
+
+    while (attempts < buildMaxAttempts) {
+      const currentLog = await this.getLatestBuildLog(projectPath);
+      if (currentLog) {
+        const currentModified = currentLog.mtime.getTime();
+        if (currentModified === lastModified) {
+          stableCount++;
+          if (stableCount >= 6) { // File hasn't changed for 3 seconds
+            break;
+          }
+        } else {
+          lastModified = currentModified;
+          stableCount = 0;
+        }
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+
+    // Parse build results
+    const results = await this.parseBuildLog(newLog.path);
+    
+    let message = `${runResult}\n\n`;
+    if (results.errors.length > 0) {
+      message += `❌ BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
+      results.errors.forEach(error => {
+        message += `  • ${error}\n`;
+      });
+    } else if (results.warnings.length > 0) {
+      message += `⚠️ BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
+      results.warnings.forEach(warning => {
+        message += `  • ${warning}\n`;
+      });
+    } else {
+      message += '✅ BUILD SUCCESSFUL - App should be launching';
+    }
+
+    return { content: [{ type: 'text', text: message }] };
   }
 
   async debug(scheme, skipBuilding = false) {
