@@ -16,10 +16,32 @@ MCP server for Xcode build automation and log parsing.
 
 ## Usage
 
+### Quick Install
+
+For a quick install, you can use the following links:
+
+- [<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect/mcp/install?name=XcodeMCP&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22github%3Alapfelix%2FXcodeMCP%22%5D%7D)
+- [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect/mcp/install?name=XcodeMCP&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22github%3Alapfelix%2FXcodeMCP%22%5D%7D&quality=insiders)
+
+### Manual Setup
+
 Run directly from GitHub:
 ```bash
 brew install xclogparser
 npx github:lapfelix/XcodeMCP
+```
+
+Or add to your MCP configuration:
+```json
+{
+  "mcpServers": {
+    "xcode": {
+      "command": "npx",
+      "args": ["github:lapfelix/XcodeMCP"],
+      "env": {}
+    }
+  }
+}
 ```
 
 Or clone locally:
