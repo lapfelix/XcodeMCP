@@ -227,6 +227,33 @@ class XcodeMCPServer {
     });
   }
 
+  async canParseLog(logPath) {
+    return new Promise((resolve) => {
+      // Test if xclogparser can parse the log without retries
+      const command = spawn('xclogparser', ['parse', '--file', logPath, '--reporter', 'issues']);
+      let hasOutput = false;
+      
+      command.stdout.on('data', () => {
+        hasOutput = true;
+      });
+      
+      command.on('close', (code) => {
+        // If it succeeds and produces output, the log is ready
+        resolve(code === 0 && hasOutput);
+      });
+      
+      command.on('error', () => {
+        resolve(false);
+      });
+      
+      // Set a timeout to avoid hanging
+      setTimeout(() => {
+        command.kill();
+        resolve(false);
+      }, 5000);
+    });
+  }
+
   setupToolHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
@@ -517,10 +544,8 @@ class XcodeMCPServer {
       return { content: [{ type: 'text', text: 'Build triggered but no build log found' }] };
     }
 
-    // Wait for build to complete by monitoring for newer logs and stability
+    // Wait for build to complete by checking if we can parse the latest log
     let lastLogPath = newLog.path;
-    let lastModified = 0;
-    let stableCount = 0;
     attempts = 0;
     const buildMaxAttempts = 600; // 5 minutes
 
@@ -532,23 +557,18 @@ class XcodeMCPServer {
           console.error(`Newer build log detected: ${currentLog.path}`);
           newLog = currentLog;
           lastLogPath = currentLog.path;
-          lastModified = 0;
-          stableCount = 0;
         }
         
-        const currentModified = currentLog.mtime.getTime();
-        if (currentModified === lastModified) {
-          stableCount++;
-          if (stableCount >= 10) { // File hasn't changed for 5 seconds
-            break;
-          }
-        } else {
-          lastModified = currentModified;
-          stableCount = 0;
+        // Test if xclogparser can parse the current log file
+        const canParse = await this.canParseLog(currentLog.path);
+        if (canParse) {
+          console.error(`Build log is ready for parsing: ${currentLog.path}`);
+          newLog = currentLog;
+          break;
         }
       }
       
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       attempts++;
     }
 
