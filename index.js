@@ -517,7 +517,8 @@ class XcodeMCPServer {
       return { content: [{ type: 'text', text: 'Build triggered but no build log found' }] };
     }
 
-    // Wait for build to complete by monitoring log file stability
+    // Wait for build to complete by monitoring for newer logs and stability
+    let lastLogPath = newLog.path;
     let lastModified = 0;
     let stableCount = 0;
     attempts = 0;
@@ -526,10 +527,19 @@ class XcodeMCPServer {
     while (attempts < buildMaxAttempts) {
       const currentLog = await this.getLatestBuildLog(projectPath);
       if (currentLog) {
+        // Check if a newer log file appeared (Xcode sometimes creates multiple logs)
+        if (currentLog.path !== lastLogPath) {
+          console.error(`Newer build log detected: ${currentLog.path}`);
+          newLog = currentLog;
+          lastLogPath = currentLog.path;
+          lastModified = 0;
+          stableCount = 0;
+        }
+        
         const currentModified = currentLog.mtime.getTime();
         if (currentModified === lastModified) {
           stableCount++;
-          if (stableCount >= 6) { // File hasn't changed for 3 seconds
+          if (stableCount >= 10) { // File hasn't changed for 5 seconds
             break;
           }
         } else {
