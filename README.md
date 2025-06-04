@@ -54,12 +54,19 @@ node index.js
 
 ## Available Tools
 
-- `xcode_open_project` - Open Xcode projects
+- `xcode_open_project` - Open Xcode projects and workspaces
 - `xcode_build` - Build and get errors/warnings  
-- `xcode_clean` - Clean build
-- `xcode_test` - Run tests
-- `xcode_run` - Run app
-- Other standard Xcode operations
+- `xcode_clean` - Clean build artifacts
+- `xcode_test` - Run unit and UI tests
+- `xcode_run` - Run the active scheme
+- `xcode_debug` - Start debugging session
+- `xcode_stop` - Stop current build/run/test operation
+- `xcode_get_schemes` - List all available schemes
+- `xcode_get_run_destinations` - List simulators and devices
+- `xcode_set_active_scheme` - Switch between schemes
+- `xcode_get_workspace_info` - Get workspace details and status
+- `xcode_get_projects` - List projects in workspace
+- `xcode_open_file` - Open specific files in Xcode
 
 ## Example
 
