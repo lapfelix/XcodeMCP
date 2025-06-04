@@ -874,8 +874,6 @@ class XcodeMCPServer {
 // Export the class for testing
 export { XcodeMCPServer };
 
-// Only run if this is the main module
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1].endsWith('index.js')) {
-  const server = new XcodeMCPServer();
-  server.start().catch(console.error);
-}
+// Start the server when this file is executed directly
+const server = new XcodeMCPServer();
+server.start().catch(console.error);
