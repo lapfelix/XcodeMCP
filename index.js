@@ -9,10 +9,7 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { spawn } from 'child_process';
-import { readdir, stat, readFile } from 'fs/promises';
-import { createReadStream } from 'fs';
-import { createGunzip } from 'zlib';
-import { pipeline } from 'stream/promises';
+import { readdir, stat } from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
@@ -120,61 +117,95 @@ class XcodeMCPServer {
   }
 
   async parseBuildLog(logPath) {
-    const result = { errors: new Set(), warnings: new Set(), notes: new Set() };
-    
-    try {
-      // Read the gzipped log file
-      const chunks = [];
-      const gunzip = createGunzip();
-      const readStream = createReadStream(logPath);
+    return new Promise((resolve) => {
+      // Use xclogparser to properly parse Apple's binary xcactivitylog format
+      const command = spawn('xclogparser', ['parse', '--file', logPath, '--reporter', 'issues']);
+      let stdout = '';
+      let stderr = '';
       
-      await pipeline(
-        readStream,
-        gunzip,
-        async function* (source) {
-          for await (const chunk of source) {
-            chunks.push(chunk);
-          }
-        }
-      );
+      command.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
       
-      const content = Buffer.concat(chunks).toString('utf-8');
-      const lines = content.split('\n');
+      command.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
       
-      for (const line of lines) {
-        // Error patterns
-        if (line.toLowerCase().includes('error:')) {
-          const fileErrorMatch = line.match(/([^:]+\.(?:swift|c(?:pp)?|h|mm?)):\d+:\d+.*?error:\s*(.+)/i);
-          if (fileErrorMatch) {
-            result.errors.add(`${fileErrorMatch[1]}:${fileErrorMatch[2].trim()}`);
-          }
+      command.on('close', (code) => {
+        if (code !== 0) {
+          console.error('xclogparser failed:', stderr);
+          resolve({
+            errors: [
+              'XCLogParser failed to parse the build log.',
+              '',
+              'This may indicate:',
+              '• The log file is corrupted or incomplete',
+              '• An unsupported Xcode version was used',
+              '• XCLogParser needs to be updated',
+              '',
+              `Error details: ${stderr.trim() || 'No error details available'}`
+            ],
+            warnings: [], 
+            notes: []
+          });
+          return;
         }
         
-        // Warning patterns  
-        if (line.toLowerCase().includes('warning:')) {
-          const fileWarningMatch = line.match(/([^:]+\.(?:swift|c(?:pp)?|h|mm?)):\d+:\d+.*?warning:\s*(.+)/i);
-          if (fileWarningMatch) {
-            result.warnings.add(`${fileWarningMatch[1]}:${fileWarningMatch[2].trim()}`);
-          }
+        try {
+          const result = JSON.parse(stdout);
+          
+          // Convert xclogparser format to our format
+          const errors = (result.errors || []).map(error => {
+            const fileName = error.documentURL ? error.documentURL.replace('file://', '') : 'Unknown file';
+            return `${fileName}: ${error.title}`;
+          });
+          
+          const warnings = (result.warnings || []).map(warning => {
+            const fileName = warning.documentURL ? warning.documentURL.replace('file://', '') : 'Unknown file';
+            return `${fileName}: ${warning.title}`;
+          });
+          
+          resolve({
+            errors,
+            warnings,
+            notes: [] // xclogparser issues reporter doesn't include notes
+          });
+        } catch (parseError) {
+          console.error('Failed to parse xclogparser output:', parseError);
+          resolve({
+            errors: [
+              'Failed to parse XCLogParser JSON output.',
+              '',
+              'This may indicate:',
+              '• XCLogParser returned unexpected output format',
+              '• The build log contains unusual data',
+              '• XCLogParser version incompatibility',
+              '',
+              `Parse error: ${parseError.message}`
+            ],
+            warnings: [], 
+            notes: []
+          });
         }
-        
-        // Note patterns
-        if (line.toLowerCase().includes('note:')) {
-          const noteMatch = line.match(/note:\s*(.+)/i);
-          if (noteMatch) {
-            result.notes.add(noteMatch[1].trim());
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to parse build log:', error);
-    }
-    
-    return {
-      errors: Array.from(result.errors),
-      warnings: Array.from(result.warnings), 
-      notes: Array.from(result.notes)
-    };
+      });
+      
+      command.on('error', (err) => {
+        console.error('Failed to run xclogparser:', err);
+        resolve({
+          errors: [
+            'XCLogParser is required to parse Xcode build logs but is not installed.',
+            '',
+            'Please install XCLogParser using one of these methods:',
+            '• Homebrew: brew install xclogparser',
+            '• From source: https://github.com/MobileNativeFoundation/XCLogParser',
+            '',
+            'XCLogParser is a professional tool for parsing Xcode\'s binary log format.'
+          ],
+          warnings: [], 
+          notes: []
+        });
+      });
+    });
   }
 
   setupToolHandlers() {
@@ -497,12 +528,12 @@ class XcodeMCPServer {
     
     let message = '';
     if (results.errors.length > 0) {
-      message = `❌ BUILD FAILED (${results.errors.length} errors)\n\n🔴 ERRORS:\n`;
+      message = `❌ BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
       results.errors.forEach(error => {
         message += `  • ${error}\n`;
       });
     } else if (results.warnings.length > 0) {
-      message = `⚠️  BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\n🟡 WARNINGS:\n`;
+      message = `⚠️ BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
       results.warnings.forEach(warning => {
         message += `  • ${warning}\n`;
       });
