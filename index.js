@@ -267,11 +267,24 @@ class XcodeMCPServer {
   async build() {
     const script = `
       const app = Application('Xcode');
-      const workspace = app.activeWorkspaceDocument();
-      if (!workspace) throw new Error('No active workspace');
+      const docs = app.workspaceDocuments();
+      if (docs.length === 0) throw new Error('No workspace document open');
       
-      workspace.build();
-      'Build started successfully';
+      const workspace = docs[0];
+      const actionResult = workspace.build();
+      
+      // Track progress every 0.5 seconds  
+      while (true) {
+        try {
+          if (actionResult.completed()) break;
+        } catch (e) {
+          // If we can't check completion, assume it's done
+          break;
+        }
+        delay(0.5);
+      }
+      
+      'Build process completed';
     `;
     
     const result = await this.executeJXA(script);
