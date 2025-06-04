@@ -9,6 +9,12 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { spawn } from 'child_process';
+import { readdir, stat, readFile } from 'fs/promises';
+import { createReadStream } from 'fs';
+import { createGunzip } from 'zlib';
+import { pipeline } from 'stream/promises';
+import path from 'path';
+import os from 'os';
 
 class XcodeMCPServer {
   constructor() {
@@ -24,6 +30,7 @@ class XcodeMCPServer {
       }
     );
 
+    this.currentProjectPath = null;
     this.setupToolHandlers();
   }
 
@@ -52,6 +59,124 @@ class XcodeMCPServer {
     });
   }
 
+  async findProjectDerivedData(projectPath) {
+    const projectName = path.basename(projectPath, path.extname(projectPath));
+    const derivedDataPath = path.join(os.homedir(), 'Library/Developer/Xcode/DerivedData');
+    
+    try {
+      const dirs = await readdir(derivedDataPath);
+      const matches = dirs.filter(dir => dir.startsWith(`${projectName}-`));
+      
+      if (matches.length === 0) return null;
+      
+      // Find the most recently modified directory
+      let latestDir = null;
+      let latestTime = 0;
+      
+      for (const match of matches) {
+        const fullPath = path.join(derivedDataPath, match);
+        const stats = await stat(fullPath);
+        if (stats.mtime.getTime() > latestTime) {
+          latestTime = stats.mtime.getTime();
+          latestDir = fullPath;
+        }
+      }
+      
+      return latestDir;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async getLatestBuildLog(projectPath) {
+    const derivedData = await this.findProjectDerivedData(projectPath);
+    if (!derivedData) return null;
+    
+    const logsDir = path.join(derivedData, 'Logs', 'Build');
+    
+    try {
+      const files = await readdir(logsDir);
+      const logFiles = files.filter(file => file.endsWith('.xcactivitylog'));
+      
+      if (logFiles.length === 0) return null;
+      
+      // Find the most recently modified log file
+      let latestLog = null;
+      let latestTime = 0;
+      
+      for (const logFile of logFiles) {
+        const fullPath = path.join(logsDir, logFile);
+        const stats = await stat(fullPath);
+        if (stats.mtime.getTime() > latestTime) {
+          latestTime = stats.mtime.getTime();
+          latestLog = { path: fullPath, mtime: stats.mtime };
+        }
+      }
+      
+      return latestLog;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async parseBuildLog(logPath) {
+    const result = { errors: new Set(), warnings: new Set(), notes: new Set() };
+    
+    try {
+      // Read the gzipped log file
+      const chunks = [];
+      const gunzip = createGunzip();
+      const readStream = createReadStream(logPath);
+      
+      await pipeline(
+        readStream,
+        gunzip,
+        async function* (source) {
+          for await (const chunk of source) {
+            chunks.push(chunk);
+          }
+        }
+      );
+      
+      const content = Buffer.concat(chunks).toString('utf-8');
+      const lines = content.split('\n');
+      
+      for (const line of lines) {
+        // Error patterns
+        if (line.toLowerCase().includes('error:')) {
+          const fileErrorMatch = line.match(/([^:]+\.(?:swift|c(?:pp)?|h|mm?)):\d+:\d+.*?error:\s*(.+)/i);
+          if (fileErrorMatch) {
+            result.errors.add(`${fileErrorMatch[1]}:${fileErrorMatch[2].trim()}`);
+          }
+        }
+        
+        // Warning patterns  
+        if (line.toLowerCase().includes('warning:')) {
+          const fileWarningMatch = line.match(/([^:]+\.(?:swift|c(?:pp)?|h|mm?)):\d+:\d+.*?warning:\s*(.+)/i);
+          if (fileWarningMatch) {
+            result.warnings.add(`${fileWarningMatch[1]}:${fileWarningMatch[2].trim()}`);
+          }
+        }
+        
+        // Note patterns
+        if (line.toLowerCase().includes('note:')) {
+          const noteMatch = line.match(/note:\s*(.+)/i);
+          if (noteMatch) {
+            result.notes.add(noteMatch[1].trim());
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to parse build log:', error);
+    }
+    
+    return {
+      errors: Array.from(result.errors),
+      warnings: Array.from(result.warnings), 
+      notes: Array.from(result.notes)
+    };
+  }
+
   setupToolHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
@@ -76,6 +201,28 @@ class XcodeMCPServer {
             inputSchema: {
               type: 'object',
               properties: {},
+            },
+          },
+          {
+            name: 'xcode_get_schemes',
+            description: 'Get list of available schemes',
+            inputSchema: {
+              type: 'object',
+              properties: {},
+            },
+          },
+          {
+            name: 'xcode_set_active_scheme',
+            description: 'Set the active scheme',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                schemeName: {
+                  type: 'string',
+                  description: 'Name of the scheme to activate',
+                },
+              },
+              required: ['schemeName'],
             },
           },
           {
@@ -253,42 +400,117 @@ class XcodeMCPServer {
     });
   }
 
-  async openProject(path) {
+  async openProject(projectPath) {
     const script = `
       const app = Application('Xcode');
-      app.open(${JSON.stringify(path)});
+      app.open(${JSON.stringify(projectPath)});
       'Project opened successfully';
     `;
     
     const result = await this.executeJXA(script);
+    this.currentProjectPath = projectPath; // Store the project path
     return { content: [{ type: 'text', text: result }] };
   }
 
   async build() {
+    // Get project path from open workspace in Xcode
+    const getProjectScript = `
+      const app = Application('Xcode');
+      const docs = app.workspaceDocuments();
+      if (docs.length === 0) throw new Error('No workspace document open');
+      
+      docs[0].path();
+    `;
+    
+    let projectPath;
+    try {
+      projectPath = await this.executeJXA(getProjectScript);
+    } catch (error) {
+      return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
+    }
+
+    // Get initial build log to compare timestamps
+    const initialLog = await this.getLatestBuildLog(projectPath);
+    const initialTime = Date.now();
+
+    // Trigger build using JXA
     const script = `
       const app = Application('Xcode');
       const docs = app.workspaceDocuments();
       if (docs.length === 0) throw new Error('No workspace document open');
       
       const workspace = docs[0];
-      const actionResult = workspace.build();
-      
-      // Track progress every 0.5 seconds  
-      while (true) {
-        try {
-          if (actionResult.completed()) break;
-        } catch (e) {
-          // If we can't check completion, assume it's done
-          break;
-        }
-        delay(0.5);
-      }
-      
-      'Build process completed';
+      workspace.build();
+      'Build triggered';
     `;
     
-    const result = await this.executeJXA(script);
-    return { content: [{ type: 'text', text: result }] };
+    await this.executeJXA(script);
+
+    // Wait for new build log to appear or existing one to be modified
+    let newLog = null;
+    let attempts = 0;
+    const maxAttempts = 60; // 30 seconds
+
+    while (attempts < maxAttempts) {
+      newLog = await this.getLatestBuildLog(projectPath);
+      
+      if (newLog && (!initialLog || newLog.path !== initialLog.path || 
+                     newLog.mtime.getTime() > initialTime)) {
+        break;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+
+    if (!newLog) {
+      return { content: [{ type: 'text', text: 'Build triggered but no build log found' }] };
+    }
+
+    // Wait for build to complete by monitoring log file stability
+    let lastModified = 0;
+    let stableCount = 0;
+    attempts = 0;
+    const buildMaxAttempts = 600; // 5 minutes
+
+    while (attempts < buildMaxAttempts) {
+      const currentLog = await this.getLatestBuildLog(projectPath);
+      if (currentLog) {
+        const currentModified = currentLog.mtime.getTime();
+        if (currentModified === lastModified) {
+          stableCount++;
+          if (stableCount >= 6) { // File hasn't changed for 3 seconds
+            break;
+          }
+        } else {
+          lastModified = currentModified;
+          stableCount = 0;
+        }
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+
+    // Parse build results
+    const results = await this.parseBuildLog(newLog.path);
+    
+    let message = '';
+    if (results.errors.length > 0) {
+      message = `❌ BUILD FAILED (${results.errors.length} errors)\n\n🔴 ERRORS:\n`;
+      results.errors.forEach(error => {
+        message += `  • ${error}\n`;
+      });
+    } else if (results.warnings.length > 0) {
+      message = `⚠️  BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\n🟡 WARNINGS:\n`;
+      results.warnings.forEach(warning => {
+        message += `  • ${warning}\n`;
+      });
+    } else {
+      message = '✅ BUILD SUCCESSFUL';
+    }
+
+    return { content: [{ type: 'text', text: message }] };
   }
 
   async clean() {
