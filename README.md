@@ -4,9 +4,11 @@ MCP server for Xcode build automation and log parsing.
 
 ## What it does
 
-- Opens Xcode projects and triggers builds
+- Opens Xcode projects and triggers builds _in Xcode, not using xcodebuild. [^1]_
 - Parses build logs to extract errors and warnings using [XCLogParser](https://github.com/MobileNativeFoundation/XCLogParser)
 - Provides MCP tools for AI assistants to interact with Xcode
+
+[^1]: For an alternative that uses `xcodebuild`, see [XcodeBuildMCP](https://github.com/cameroncooke/XcodeBuildMCP)
 
 ## Requirements
 
@@ -17,8 +19,6 @@ MCP server for Xcode build automation and log parsing.
 ## Usage
 
 ### Quick Install
-
-For a quick install, you can use the following links:
 
 - [<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect/mcp/install?name=xcodemcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22github%3Alapfelix%2FXcodeMCP%22%5D%7D)
 - [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect/mcp/install?name=xcodemcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22github%3Alapfelix%2FXcodeMCP%22%5D%7D&quality=insiders)
