@@ -116,7 +116,8 @@ class XcodeMCPServer {
     }
   }
 
-  async parseBuildLog(logPath) {
+  async parseBuildLog(logPath, retryCount = 0, maxRetries = 6) {
+    const delays = [1000, 2000, 3000, 5000, 8000, 13000]; // Fibonacci-like progression in ms
     return new Promise((resolve) => {
       // Use xclogparser to properly parse Apple's binary xcactivitylog format
       const command = spawn('xclogparser', ['parse', '--file', logPath, '--reporter', 'issues']);
@@ -133,6 +134,21 @@ class XcodeMCPServer {
       
       command.on('close', (code) => {
         if (code !== 0) {
+          const errorMessage = stderr.trim() || 'No error details available';
+          
+          // Check if this is a "file not valid SLF log" error and we can retry
+          if ((errorMessage.includes('not a valid SLF log') || errorMessage.includes('corrupted') || errorMessage.includes('incomplete')) 
+              && retryCount < maxRetries) {
+            console.error(`XCLogParser failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${errorMessage}`);
+            console.error(`Retrying in ${delays[retryCount]}ms...`);
+            
+            setTimeout(async () => {
+              const result = await this.parseBuildLog(logPath, retryCount + 1, maxRetries);
+              resolve(result);
+            }, delays[retryCount]);
+            return;
+          }
+          
           console.error('xclogparser failed:', stderr);
           resolve({
             errors: [
@@ -143,7 +159,7 @@ class XcodeMCPServer {
               '• An unsupported Xcode version was used',
               '• XCLogParser needs to be updated',
               '',
-              `Error details: ${stderr.trim() || 'No error details available'}`
+              `Error details: ${errorMessage}`
             ],
             warnings: [], 
             notes: []
