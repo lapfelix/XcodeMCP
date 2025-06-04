@@ -4,9 +4,7 @@
   "description": "Model Context Protocol server for Xcode build automation and log parsing",
   "main": "index.js",
   "type": "module",
-  "bin": {
-    "xcode-mcp": "./index.js"
-  },
+  "bin": "./index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
