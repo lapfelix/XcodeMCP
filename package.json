@@ -1,9 +1,12 @@
 {
-  "name": "xcode-mcp-server",
+  "name": "xcode-mcp",
   "version": "1.0.0",
-  "description": "MCP server for Xcode AppleScript automation",
+  "description": "Model Context Protocol server for Xcode build automation and log parsing",
   "main": "index.js",
   "type": "module",
+  "bin": {
+    "xcode-mcp": "./index.js"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
@@ -21,14 +24,26 @@
   "engines": {
     "node": ">=18"
   },
+  "os": ["darwin"],
   "keywords": [
     "mcp",
     "xcode",
-    "applescript",
+    "build",
     "automation",
     "ios",
-    "macos"
+    "macos",
+    "swift",
+    "xclogparser",
+    "model-context-protocol"
   ],
-  "author": "",
-  "license": "MIT"
+  "author": "Felix Lapalme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lapfelix/XcodeMCP.git"
+  },
+  "homepage": "https://github.com/lapfelix/XcodeMCP#readme",
+  "bugs": {
+    "url": "https://github.com/lapfelix/XcodeMCP/issues"
+  }
 }
