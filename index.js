@@ -136,8 +136,11 @@ class XcodeMCPServer {
         if (code !== 0) {
           const errorMessage = stderr.trim() || 'No error details available';
           
-          // Check if this is a "file not valid SLF log" error and we can retry
-          if ((errorMessage.includes('not a valid SLF log') || errorMessage.includes('corrupted') || errorMessage.includes('incomplete')) 
+          // Check if this is a log file parsing error and we can retry
+          if ((errorMessage.includes('not a valid SLF log') || 
+               errorMessage.includes('not a valid xcactivitylog file') ||
+               errorMessage.includes('corrupted') || 
+               errorMessage.includes('incomplete')) 
               && retryCount < maxRetries) {
             console.error(`XCLogParser failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${errorMessage}`);
             console.error(`Retrying in ${delays[retryCount]}ms...`);
