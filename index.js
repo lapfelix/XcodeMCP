@@ -266,7 +266,7 @@ class XcodeMCPServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
                 },
               },
               required: ['path'],
@@ -280,7 +280,7 @@ class XcodeMCPServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Path to the .xcodeproj or .xcworkspace file to build',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file to build',
                 },
               },
               required: ['path'],
@@ -441,7 +441,7 @@ class XcodeMCPServer {
               properties: {
                 filePath: {
                   type: 'string',
-                  description: 'Path to the file to open',
+                  description: 'Absolute path to the file to open',
                 },
                 lineNumber: {
                   type: 'number',
@@ -504,6 +504,11 @@ class XcodeMCPServer {
   }
 
   async openProject(projectPath) {
+    // Require absolute paths to avoid confusion
+    if (!path.isAbsolute(projectPath)) {
+      return { content: [{ type: 'text', text: `Project path must be absolute, got: ${projectPath}\nExample: /Users/username/path/to/project.xcodeproj` }] };
+    }
+    
     const script = `
       const app = Application('Xcode');
       app.open(${JSON.stringify(projectPath)});
@@ -1075,6 +1080,11 @@ class XcodeMCPServer {
   }
 
   async openFile(filePath, lineNumber) {
+    // Require absolute paths to avoid confusion
+    if (!path.isAbsolute(filePath)) {
+      return { content: [{ type: 'text', text: `File path must be absolute, got: ${filePath}\nExample: /Users/username/path/to/file.swift` }] };
+    }
+    
     const script = `
       (function() {
         const app = Application('Xcode');
