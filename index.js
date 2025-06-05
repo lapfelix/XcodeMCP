@@ -10,6 +10,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { spawn } from 'child_process';
 import { readdir, stat } from 'fs/promises';
+import { existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 
@@ -509,6 +510,27 @@ class XcodeMCPServer {
       return { content: [{ type: 'text', text: `Project path must be absolute, got: ${projectPath}\nExample: /Users/username/path/to/project.xcodeproj` }] };
     }
     
+    // Check if the project file actually exists
+    if (!existsSync(projectPath)) {
+      return { content: [{ type: 'text', text: `Project file does not exist: ${projectPath}` }] };
+    }
+    
+    // For .xcodeproj files, also check if project.pbxproj exists inside
+    if (projectPath.endsWith('.xcodeproj')) {
+      const pbxprojPath = path.join(projectPath, 'project.pbxproj');
+      if (!existsSync(pbxprojPath)) {
+        return { content: [{ type: 'text', text: `Project is missing project.pbxproj file: ${pbxprojPath}` }] };
+      }
+    }
+    
+    // For .xcworkspace files, check if contents.xcworkspacedata exists
+    if (projectPath.endsWith('.xcworkspace')) {
+      const workspaceDataPath = path.join(projectPath, 'contents.xcworkspacedata');
+      if (!existsSync(workspaceDataPath)) {
+        return { content: [{ type: 'text', text: `Workspace is missing contents.xcworkspacedata file: ${workspaceDataPath}` }] };
+      }
+    }
+    
     const script = `
       const app = Application('Xcode');
       app.open(${JSON.stringify(projectPath)});
@@ -528,6 +550,27 @@ class XcodeMCPServer {
     // Require absolute paths to avoid confusion
     if (!path.isAbsolute(projectPath)) {
       return { content: [{ type: 'text', text: `Project path must be absolute, got: ${projectPath}\nExample: /Users/username/path/to/project.xcodeproj` }] };
+    }
+    
+    // Check if the project file actually exists
+    if (!existsSync(projectPath)) {
+      return { content: [{ type: 'text', text: `Project file does not exist: ${projectPath}` }] };
+    }
+    
+    // For .xcodeproj files, also check if project.pbxproj exists inside
+    if (projectPath.endsWith('.xcodeproj')) {
+      const pbxprojPath = path.join(projectPath, 'project.pbxproj');
+      if (!existsSync(pbxprojPath)) {
+        return { content: [{ type: 'text', text: `Project is missing project.pbxproj file: ${pbxprojPath}` }] };
+      }
+    }
+    
+    // For .xcworkspace files, check if contents.xcworkspacedata exists
+    if (projectPath.endsWith('.xcworkspace')) {
+      const workspaceDataPath = path.join(projectPath, 'contents.xcworkspacedata');
+      if (!existsSync(workspaceDataPath)) {
+        return { content: [{ type: 'text', text: `Workspace is missing contents.xcworkspacedata file: ${workspaceDataPath}` }] };
+      }
     }
     
     // Build using Apple's recommended approach with actionResult
@@ -615,8 +658,15 @@ class XcodeMCPServer {
   }
 
   async buildScheme(schemeName, destination = null) {
+    // Stop any existing builds first
+    try {
+      await this.stop();
+    } catch (error) {
+      // Ignore errors if nothing was running
+    }
+    
     // Get project path from open workspace in Xcode
-    const getProjectScript = `
+    const getProjectPathScript = `
       const app = Application('Xcode');
       const docs = app.workspaceDocuments();
       if (docs.length === 0) throw new Error('No workspace document open');
@@ -624,9 +674,9 @@ class XcodeMCPServer {
       docs[0].path();
     `;
     
-    let projectPath;
+    let schemeProjectPath;
     try {
-      projectPath = await this.executeJXA(getProjectScript);
+      schemeProjectPath = await this.executeJXA(getProjectPathScript);
     } catch (error) {
       return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
     }
@@ -683,70 +733,127 @@ class XcodeMCPServer {
       }
     }
 
-    // Get initial build log to compare timestamps
-    const initialLog = await this.getLatestBuildLog(projectPath);
-    const initialTime = Date.now();
-
-    // Trigger build using JXA
-    const buildScript = `
+    // Get project path from open workspace in Xcode
+    const getProjectScript = `
       const app = Application('Xcode');
       const docs = app.workspaceDocuments();
       if (docs.length === 0) throw new Error('No workspace document open');
       
-      const workspace = docs[0];
-      workspace.build();
-      'Build triggered for scheme ${schemeName}';
+      docs[0].path();
     `;
+    
+    let projectPath;
+    try {
+      projectPath = await this.executeJXA(getProjectPathScript);
+    } catch (error) {
+      return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
+    }
+
+    // Trigger build using JXA - just start the build
+    const buildScript = `
+      (function() {
+        const app = Application('Xcode');
+        const docs = app.workspaceDocuments();
+        if (docs.length === 0) throw new Error('No workspace document open');
+        
+        const workspace = docs[0];
+        
+        // Start the build
+        workspace.build();
+        
+        return 'Build started for scheme ${schemeName}';
+      })()
+    `;
+    
+    // Record the time when we started the build
+    const buildStartTime = Date.now();
     
     await this.executeJXA(buildScript);
 
-    // Wait for new build log to appear or existing one to be modified
-    let newLog = null;
+    // Wait for a NEW build log that was created AFTER we started the build
+    console.error(`Waiting for new build log to appear after build start...`);
+    
     let attempts = 0;
-    const maxAttempts = 60; // 30 seconds
+    let newLog = null;
+    const initialWaitAttempts = 180; // Wait up to 3 minutes for a new log to appear
 
-    while (attempts < maxAttempts) {
-      newLog = await this.getLatestBuildLog(projectPath);
+    // First, wait for a new log file to appear
+    while (attempts < initialWaitAttempts) {
+      const currentLog = await this.getLatestBuildLog(schemeProjectPath);
       
-      if (newLog && (!initialLog || newLog.path !== initialLog.path || 
-                     newLog.mtime.getTime() > initialTime)) {
-        break;
+      if (currentLog) {
+        const logTime = currentLog.mtime.getTime();
+        const buildTime = buildStartTime;
+        console.error(`Checking log: ${currentLog.path}, log time: ${logTime}, build time: ${buildTime}, diff: ${logTime - buildTime}ms`);
+        
+        if (logTime > buildTime) {
+          newLog = currentLog;
+          console.error(`Found new build log created after build start: ${newLog.path}`);
+          break;
+        }
+      } else {
+        console.error(`No build log found yet, attempt ${attempts + 1}/${initialWaitAttempts}`);
       }
       
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       attempts++;
     }
 
     if (!newLog) {
-      return { content: [{ type: 'text', text: `Build triggered for scheme '${schemeName}' but no build log found` }] };
+      return { content: [{ type: 'text', text: `Build started for scheme '${schemeName}' but no new build log appeared within ${initialWaitAttempts} seconds` }] };
     }
 
-    // Wait for build to complete by checking if we can parse the latest log
-    let lastLogPath = newLog.path;
+    // Now wait for this specific build to complete
+    console.error(`Monitoring build completion for log: ${newLog.path}`);
+    
     attempts = 0;
-    const buildMaxAttempts = 600; // 5 minutes
+    const maxAttempts = 1200; // 20 minutes with 1 second intervals
+    let lastLogSize = 0;
+    let stableCount = 0;
 
-    while (attempts < buildMaxAttempts) {
-      const currentLog = await this.getLatestBuildLog(projectPath);
-      if (currentLog) {
-        // Check if a newer log file appeared (Xcode sometimes creates multiple logs)
-        if (currentLog.path !== lastLogPath) {
-          console.error(`Newer build log detected: ${currentLog.path}`);
-          newLog = currentLog;
-          lastLogPath = currentLog.path;
-        }
+    while (attempts < maxAttempts) {
+      try {
+        const logStats = await stat(newLog.path);
+        const currentLogSize = logStats.size;
         
-        // Test if xclogparser can parse the current log file
-        const canParse = await this.canParseLog(currentLog.path);
-        if (canParse) {
-          console.error(`Build log is ready for parsing: ${currentLog.path}`);
+        // Check if log file has stopped growing
+        if (currentLogSize === lastLogSize) {
+          stableCount++;
+          // Wait for log to be stable for 5 seconds and parseable
+          if (stableCount >= 5) {
+            const canParse = await this.canParseLog(newLog.path);
+            if (canParse) {
+              console.error(`Build completed, log is ready: ${newLog.path}`);
+              break;
+            }
+          }
+        } else {
+          // Log is still growing
+          lastLogSize = currentLogSize;
+          stableCount = 0;
+        }
+      } catch (error) {
+        // If we can't stat the file, it might have been moved or deleted
+        // Try to get the latest log again
+        const currentLog = await this.getLatestBuildLog(schemeProjectPath);
+        if (currentLog && currentLog.path !== newLog.path && currentLog.mtime.getTime() > buildStartTime) {
+          console.error(`Build log changed to: ${currentLog.path}`);
           newLog = currentLog;
-          break;
+          lastLogSize = 0;
+          stableCount = 0;
         }
       }
       
       await new Promise(resolve => setTimeout(resolve, 1000));
       attempts++;
+    }
+
+    if (!newLog) {
+      return { content: [{ type: 'text', text: `Build started for scheme '${schemeName}' but no build log found after ${maxAttempts} seconds` }] };
+    }
+    
+    if (attempts >= maxAttempts) {
+      return { content: [{ type: 'text', text: `Build for scheme '${schemeName}' timed out after ${maxAttempts} seconds` }] };
     }
 
     // Parse build results
@@ -784,8 +891,18 @@ class XcodeMCPServer {
         const workspace = app.activeWorkspaceDocument();
         if (!workspace) throw new Error('No active workspace');
         
-        const result = workspace.clean();
-        return \`Clean started. Result ID: \${result.id()}\`;
+        // Start the clean and get the action result
+        const actionResult = workspace.clean();
+        
+        // Wait for clean to complete using Apple's approach
+        while (true) {
+          if (actionResult.completed()) {
+            break;
+          }
+          delay(0.5);
+        }
+        
+        return \`Clean completed. Result ID: \${actionResult.id()}\`;
       })()
     `;
     
@@ -825,7 +942,7 @@ class XcodeMCPServer {
     
     let projectPath;
     try {
-      projectPath = await this.executeJXA(getProjectScript);
+      projectPath = await this.executeJXA(getProjectPathScript);
     } catch (error) {
       return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
     }
@@ -1083,6 +1200,11 @@ class XcodeMCPServer {
     // Require absolute paths to avoid confusion
     if (!path.isAbsolute(filePath)) {
       return { content: [{ type: 'text', text: `File path must be absolute, got: ${filePath}\nExample: /Users/username/path/to/file.swift` }] };
+    }
+    
+    // Check if the file actually exists
+    if (!existsSync(filePath)) {
+      return { content: [{ type: 'text', text: `File does not exist: ${filePath}` }] };
     }
     
     const script = `
