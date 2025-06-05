@@ -32,6 +32,40 @@ class XcodeMCPServer {
     this.setupToolHandlers();
   }
 
+  // Helper function to validate project paths
+  validateProjectPath(projectPath) {
+    if (!projectPath) {
+      return { content: [{ type: 'text', text: 'Project path is required. Please specify the path to your .xcodeproj or .xcworkspace file.' }] };
+    }
+    
+    if (!path.isAbsolute(projectPath)) {
+      return { content: [{ type: 'text', text: `Project path must be absolute, got: ${projectPath}\nExample: /Users/username/path/to/project.xcodeproj` }] };
+    }
+    
+    // Check if the project file actually exists
+    if (!existsSync(projectPath)) {
+      return { content: [{ type: 'text', text: `Project file does not exist: ${projectPath}` }] };
+    }
+    
+    // For .xcodeproj files, also check if project.pbxproj exists inside
+    if (projectPath.endsWith('.xcodeproj')) {
+      const pbxprojPath = path.join(projectPath, 'project.pbxproj');
+      if (!existsSync(pbxprojPath)) {
+        return { content: [{ type: 'text', text: `Project is missing project.pbxproj file: ${pbxprojPath}` }] };
+      }
+    }
+    
+    // For .xcworkspace files, check if contents.xcworkspacedata exists
+    if (projectPath.endsWith('.xcworkspace')) {
+      const workspaceDataPath = path.join(projectPath, 'contents.xcworkspacedata');
+      if (!existsSync(workspaceDataPath)) {
+        return { content: [{ type: 'text', text: `Workspace is missing contents.xcworkspacedata file: ${workspaceDataPath}` }] };
+      }
+    }
+
+    return null; // No validation errors
+  }
+
   // Execute JXA (JavaScript for Automation) code
   async executeJXA(script) {
     return new Promise((resolve, reject) => {
@@ -289,10 +323,14 @@ class XcodeMCPServer {
           },
           {
             name: 'xcode_build_scheme',
-            description: 'Build the workspace with a specific scheme and destination',
+            description: 'Build a specific project/workspace with a scheme and destination',
             inputSchema: {
               type: 'object',
               properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
                 scheme: {
                   type: 'string',
                   description: 'Name of the scheme to build',
@@ -302,73 +340,103 @@ class XcodeMCPServer {
                   description: 'Build destination (optional)',
                 },
               },
-              required: ['scheme'],
+              required: ['path', 'scheme'],
             },
           },
           {
             name: 'xcode_get_schemes',
-            description: 'Get list of available schemes',
+            description: 'Get list of available schemes for a specific project',
             inputSchema: {
               type: 'object',
-              properties: {},
+              properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
+              },
+              required: ['path'],
             },
           },
           {
             name: 'xcode_set_active_scheme',
-            description: 'Set the active scheme',
+            description: 'Set the active scheme for a specific project',
             inputSchema: {
               type: 'object',
               properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
                 schemeName: {
                   type: 'string',
                   description: 'Name of the scheme to activate',
                 },
               },
-              required: ['schemeName'],
+              required: ['path', 'schemeName'],
             },
           },
           {
             name: 'xcode_clean',
-            description: 'Clean the active workspace',
+            description: 'Clean the build directory for a specific project',
             inputSchema: {
               type: 'object',
-              properties: {},
+              properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
+              },
+              required: ['path'],
             },
           },
           {
             name: 'xcode_test',
-            description: 'Run tests for the active workspace',
+            description: 'Run tests for a specific project',
             inputSchema: {
               type: 'object',
               properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
                 commandLineArguments: {
                   type: 'array',
                   items: { type: 'string' },
                   description: 'Additional command line arguments',
                 },
               },
+              required: ['path'],
             },
           },
           {
             name: 'xcode_run',
-            description: 'Run the active scheme',
+            description: 'Run a specific project',
             inputSchema: {
               type: 'object',
               properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
                 commandLineArguments: {
                   type: 'array',
                   items: { type: 'string' },
                   description: 'Additional command line arguments',
                 },
               },
+              required: ['path'],
             },
           },
           {
             name: 'xcode_debug',
-            description: 'Start debugging session',
+            description: 'Start debugging session for a specific project',
             inputSchema: {
               type: 'object',
               properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
                 scheme: {
                   type: 'string',
                   description: 'Scheme name (optional)',
@@ -378,6 +446,7 @@ class XcodeMCPServer {
                   description: 'Whether to skip building',
                 },
               },
+              required: ['path'],
             },
           },
           {
@@ -389,49 +458,45 @@ class XcodeMCPServer {
             },
           },
           {
-            name: 'xcode_get_schemes',
-            description: 'Get list of available schemes',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-            },
-          },
-          {
             name: 'xcode_get_run_destinations',
-            description: 'Get list of available run destinations',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-            },
-          },
-          {
-            name: 'xcode_set_active_scheme',
-            description: 'Set the active scheme',
+            description: 'Get list of available run destinations for a specific project',
             inputSchema: {
               type: 'object',
               properties: {
-                schemeName: {
+                path: {
                   type: 'string',
-                  description: 'Name of the scheme to activate',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
                 },
               },
-              required: ['schemeName'],
+              required: ['path'],
             },
           },
           {
             name: 'xcode_get_workspace_info',
-            description: 'Get information about the active workspace',
+            description: 'Get information about a specific workspace',
             inputSchema: {
               type: 'object',
-              properties: {},
+              properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
+              },
+              required: ['path'],
             },
           },
           {
             name: 'xcode_get_projects',
-            description: 'Get list of projects in the workspace',
+            description: 'Get list of projects in a specific workspace',
             inputSchema: {
               type: 'object',
-              properties: {},
+              properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
+              },
+              required: ['path'],
             },
           },
           {
@@ -466,27 +531,27 @@ class XcodeMCPServer {
           case 'xcode_build':
             return await this.build(args.path);
           case 'xcode_build_scheme':
-            return await this.buildScheme(args.scheme, args.destination);
+            return await this.buildScheme(args.path, args.scheme, args.destination);
           case 'xcode_clean':
-            return await this.clean();
+            return await this.clean(args.path);
           case 'xcode_test':
-            return await this.test(args.commandLineArguments);
+            return await this.test(args.path, args.commandLineArguments);
           case 'xcode_run':
-            return await this.run(args.commandLineArguments);
+            return await this.run(args.path, args.commandLineArguments);
           case 'xcode_debug':
-            return await this.debug(args.scheme, args.skipBuilding);
+            return await this.debug(args.path, args.scheme, args.skipBuilding);
           case 'xcode_stop':
             return await this.stop();
           case 'xcode_get_schemes':
-            return await this.getSchemes();
+            return await this.getSchemes(args.path);
           case 'xcode_get_run_destinations':
-            return await this.getRunDestinations();
+            return await this.getRunDestinations(args.path);
           case 'xcode_set_active_scheme':
-            return await this.setActiveScheme(args.schemeName);
+            return await this.setActiveScheme(args.path, args.schemeName);
           case 'xcode_get_workspace_info':
-            return await this.getWorkspaceInfo();
+            return await this.getWorkspaceInfo(args.path);
           case 'xcode_get_projects':
-            return await this.getProjects();
+            return await this.getProjects(args.path);
           case 'xcode_open_file':
             return await this.openFile(args.filePath, args.lineNumber);
           default:
@@ -657,7 +722,37 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: message }] };
   }
 
-  async buildScheme(schemeName, destination = null) {
+  async buildScheme(projectPath, schemeName, destination = null) {
+    // Validate project path
+    if (!projectPath) {
+      return { content: [{ type: 'text', text: 'Project path is required. Please specify the path to your .xcodeproj or .xcworkspace file.' }] };
+    }
+    
+    if (!path.isAbsolute(projectPath)) {
+      return { content: [{ type: 'text', text: `Project path must be absolute, got: ${projectPath}\nExample: /Users/username/path/to/project.xcodeproj` }] };
+    }
+    
+    // Check if the project file actually exists
+    if (!existsSync(projectPath)) {
+      return { content: [{ type: 'text', text: `Project file does not exist: ${projectPath}` }] };
+    }
+    
+    // For .xcodeproj files, also check if project.pbxproj exists inside
+    if (projectPath.endsWith('.xcodeproj')) {
+      const pbxprojPath = path.join(projectPath, 'project.pbxproj');
+      if (!existsSync(pbxprojPath)) {
+        return { content: [{ type: 'text', text: `Project is missing project.pbxproj file: ${pbxprojPath}` }] };
+      }
+    }
+    
+    // For .xcworkspace files, check if contents.xcworkspacedata exists
+    if (projectPath.endsWith('.xcworkspace')) {
+      const workspaceDataPath = path.join(projectPath, 'contents.xcworkspacedata');
+      if (!existsSync(workspaceDataPath)) {
+        return { content: [{ type: 'text', text: `Workspace is missing contents.xcworkspacedata file: ${workspaceDataPath}` }] };
+      }
+    }
+
     // Stop any existing builds first
     try {
       await this.stop();
@@ -665,21 +760,8 @@ class XcodeMCPServer {
       // Ignore errors if nothing was running
     }
     
-    // Get project path from open workspace in Xcode
-    const getProjectPathScript = `
-      const app = Application('Xcode');
-      const docs = app.workspaceDocuments();
-      if (docs.length === 0) throw new Error('No workspace document open');
-      
-      docs[0].path();
-    `;
-    
-    let schemeProjectPath;
-    try {
-      schemeProjectPath = await this.executeJXA(getProjectPathScript);
-    } catch (error) {
-      return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
-    }
+    // Open the project first
+    await this.openProject(projectPath);
 
     // Set the active scheme first
     const setSchemeScript = `
@@ -733,21 +815,6 @@ class XcodeMCPServer {
       }
     }
 
-    // Get project path from open workspace in Xcode
-    const getProjectScript = `
-      const app = Application('Xcode');
-      const docs = app.workspaceDocuments();
-      if (docs.length === 0) throw new Error('No workspace document open');
-      
-      docs[0].path();
-    `;
-    
-    let projectPath;
-    try {
-      projectPath = await this.executeJXA(getProjectPathScript);
-    } catch (error) {
-      return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
-    }
 
     // Trigger build using JXA - just start the build
     const buildScript = `
@@ -779,7 +846,7 @@ class XcodeMCPServer {
 
     // First, wait for a new log file to appear
     while (attempts < initialWaitAttempts) {
-      const currentLog = await this.getLatestBuildLog(schemeProjectPath);
+      const currentLog = await this.getLatestBuildLog(projectPath);
       
       if (currentLog) {
         const logTime = currentLog.mtime.getTime();
@@ -835,7 +902,7 @@ class XcodeMCPServer {
       } catch (error) {
         // If we can't stat the file, it might have been moved or deleted
         // Try to get the latest log again
-        const currentLog = await this.getLatestBuildLog(schemeProjectPath);
+        const currentLog = await this.getLatestBuildLog(projectPath);
         if (currentLog && currentLog.path !== newLog.path && currentLog.mtime.getTime() > buildStartTime) {
           console.error(`Build log changed to: ${currentLog.path}`);
           newLog = currentLog;
@@ -884,7 +951,14 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: message }] };
   }
 
-  async clean() {
+  async clean(projectPath) {
+    // Validate project path
+    const validationError = this.validateProjectPath(projectPath);
+    if (validationError) return validationError;
+
+    // Open the project first
+    await this.openProject(projectPath);
+
     const script = `
       (function() {
         const app = Application('Xcode');
@@ -931,21 +1005,6 @@ class XcodeMCPServer {
   }
 
   async run(commandLineArguments = []) {
-    // Get project path from open workspace in Xcode
-    const getProjectScript = `
-      const app = Application('Xcode');
-      const docs = app.workspaceDocuments();
-      if (docs.length === 0) throw new Error('No workspace document open');
-      
-      docs[0].path();
-    `;
-    
-    let projectPath;
-    try {
-      projectPath = await this.executeJXA(getProjectPathScript);
-    } catch (error) {
-      return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
-    }
 
     // Get initial build log to compare timestamps
     const initialLog = await this.getLatestBuildLog(actualProjectPath);
