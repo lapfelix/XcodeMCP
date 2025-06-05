@@ -300,10 +300,10 @@ describeIfXcode('XcodeMCPServer', () => {
         await resultPromise;
         
         // Verify that osascript was called with JavaScript flag
-        expect(spawn).toHaveBeenCalledWith('osascript', expect.arrayContaining(['-l', 'JavaScript']));
+        expect(mockSpawn).toHaveBeenCalledWith('osascript', expect.arrayContaining(['-l', 'JavaScript']));
         
         // Reset mock for next iteration
-        spawn.mockClear();
+        mockSpawn.mockClear();
         mockProcess = new EventEmitter();
         mockProcess.stdout = new EventEmitter();
         mockProcess.stderr = new EventEmitter();

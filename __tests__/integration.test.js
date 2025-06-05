@@ -9,6 +9,12 @@ jest.unstable_mockModule('child_process', () => ({
   spawn: mockSpawn
 }));
 
+// Mock fs/promises
+jest.unstable_mockModule('fs/promises', () => ({
+  readdir: jest.fn(),
+  stat: jest.fn()
+}));
+
 // Mock MCP SDK
 jest.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
   Server: jest.fn().mockImplementation(() => ({
@@ -118,14 +124,14 @@ describeIfXcode('Integration Tests', () => {
       mockSpawn.mockReturnValue(mockProcess);
       
       // Step 3: Build project
-      const buildPromise = server.build();
+      const buildPromise = server.build('/Users/test/TestApp.xcodeproj');
       setTimeout(() => {
-        mockProcess.stdout.emit('data', 'Build started. Result ID: build-123\n');
+        mockProcess.stdout.emit('data', '/Users/test/TestApp.xcodeproj\n');
         mockProcess.emit('close', 0);
       }, 10);
       
       const buildResult = await buildPromise;
-      expect(buildResult.content[0].text).toContain('Build started');
+      expect(buildResult.content[0].text).toContain('BUILD SUCCESSFUL');
     });
 
     test('should handle test workflow with custom arguments', async () => {
@@ -185,7 +191,7 @@ describeIfXcode('Integration Tests', () => {
     test('should handle Xcode not running error', async () => {
       const server = new XcodeMCPServer();
       
-      const buildPromise = server.build();
+      const buildPromise = server.build('/Users/test/TestApp.xcodeproj');
       setTimeout(() => {
         mockProcess.stderr.emit('data', 'Error: Application "Xcode" is not running\n');
         mockProcess.emit('close', 1);
@@ -223,16 +229,16 @@ describeIfXcode('Integration Tests', () => {
     test('should handle slow JXA execution', async () => {
       const server = new XcodeMCPServer();
       
-      const buildPromise = server.build();
+      const buildPromise = server.build('/Users/test/TestApp.xcodeproj');
       
       // Simulate slow response
       setTimeout(() => {
-        mockProcess.stdout.emit('data', 'Build started. Result ID: slow-build\n');
+        mockProcess.stdout.emit('data', '/Users/test/TestApp.xcodeproj\n');
         mockProcess.emit('close', 0);
       }, 100); // 100ms delay
       
       const result = await buildPromise;
-      expect(result.content[0].text).toContain('Build started');
+      expect(result.content[0].text).toContain('BUILD SUCCESSFUL');
     });
 
     test('should handle multiple concurrent operations', async () => {
@@ -240,7 +246,7 @@ describeIfXcode('Integration Tests', () => {
       
       // Create multiple mock processes for concurrent calls
       const processes = [];
-      spawn.mockImplementation(() => {
+      mockSpawn.mockImplementation(() => {
         const proc = new EventEmitter();
         proc.stdout = new EventEmitter();
         proc.stderr = new EventEmitter();
@@ -331,8 +337,8 @@ describeIfXcode('Integration Tests', () => {
       expect(result.content[0].text).toBe('File opened successfully');
       
       // Verify the correct osascript call was made
-      expect(spawn).toHaveBeenCalledWith('osascript', ['-l', 'JavaScript', '-e', expect.any(String)]);
-      const script = spawn.mock.calls[0][2][2];
+      expect(mockSpawn).toHaveBeenCalledWith('osascript', ['-l', 'JavaScript', '-e', expect.any(String)]);
+      const script = mockSpawn.mock.calls[0][2][2];
       expect(script).toContain(filePath);
       expect(script).toContain(lineNumber.toString());
     });
