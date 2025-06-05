@@ -581,6 +581,11 @@ class XcodeMCPServer {
       results.errors.forEach(error => {
         message += `  • ${error}\n`;
       });
+      // Throw MCP error for build failures
+      throw new McpError(
+        ErrorCode.InternalError,
+        message
+      );
     } else if (results.warnings.length > 0) {
       message = `⚠️ BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
       results.warnings.forEach(warning => {
@@ -722,6 +727,11 @@ class XcodeMCPServer {
       results.errors.forEach(error => {
         message += `  • ${error}\n`;
       });
+      // Throw MCP error for build failures during run
+      throw new McpError(
+        ErrorCode.InternalError,
+        message
+      );
     } else if (results.warnings.length > 0) {
       message += `⚠️ BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
       results.warnings.forEach(warning => {
