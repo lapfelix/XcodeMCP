@@ -520,6 +520,11 @@ class XcodeMCPServer {
       return { content: [{ type: 'text', text: 'Project path is required. Please specify the path to your .xcodeproj or .xcworkspace file.' }] };
     }
     
+    // Convert relative path to absolute path
+    if (!path.isAbsolute(projectPath)) {
+      projectPath = path.resolve(projectPath);
+    }
+    
     // Build using Apple's recommended approach with actionResult
     const buildScript = `
       (function() {
@@ -623,12 +628,21 @@ class XcodeMCPServer {
 
     // Set the active scheme first
     const setSchemeScript = `
-      const app = Application('Xcode');
-      const workspace = app.activeWorkspaceDocument();
-      if (!workspace) throw new Error('No active workspace');
-      
-      workspace.setActiveScheme("${schemeName}");
-      "Scheme set to ${schemeName}";
+      (function() {
+        const app = Application('Xcode');
+        const workspace = app.activeWorkspaceDocument();
+        if (!workspace) throw new Error('No active workspace');
+        
+        const schemes = workspace.schemes();
+        const targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(schemeName)});
+        
+        if (!targetScheme) {
+          throw new Error('Scheme ' + ${JSON.stringify(schemeName)} + ' not found');
+        }
+        
+        workspace.activeScheme = targetScheme;
+        return 'Scheme set to ' + ${JSON.stringify(schemeName)};
+      })()
     `;
     
     try {
@@ -640,12 +654,21 @@ class XcodeMCPServer {
     // Set destination if provided
     if (destination) {
       const setDestinationScript = `
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
-        
-        workspace.setActiveRunDestination("${destination}");
-        "Destination set to ${destination}";
+        (function() {
+          const app = Application('Xcode');
+          const workspace = app.activeWorkspaceDocument();
+          if (!workspace) throw new Error('No active workspace');
+          
+          const destinations = workspace.runDestinations();
+          const targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(destination)});
+          
+          if (!targetDestination) {
+            throw new Error('Destination ' + ${JSON.stringify(destination)} + ' not found');
+          }
+          
+          workspace.activeRunDestination = targetDestination;
+          return 'Destination set to ' + ${JSON.stringify(destination)};
+        })()
       `;
       
       try {
@@ -656,7 +679,7 @@ class XcodeMCPServer {
     }
 
     // Get initial build log to compare timestamps
-    const initialLog = await this.getLatestBuildLog(actualProjectPath);
+    const initialLog = await this.getLatestBuildLog(projectPath);
     const initialTime = Date.now();
 
     // Trigger build using JXA
@@ -678,7 +701,7 @@ class XcodeMCPServer {
     const maxAttempts = 60; // 30 seconds
 
     while (attempts < maxAttempts) {
-      newLog = await this.getLatestBuildLog(actualProjectPath);
+      newLog = await this.getLatestBuildLog(projectPath);
       
       if (newLog && (!initialLog || newLog.path !== initialLog.path || 
                      newLog.mtime.getTime() > initialTime)) {
@@ -699,7 +722,7 @@ class XcodeMCPServer {
     const buildMaxAttempts = 600; // 5 minutes
 
     while (attempts < buildMaxAttempts) {
-      const currentLog = await this.getLatestBuildLog(actualProjectPath);
+      const currentLog = await this.getLatestBuildLog(projectPath);
       if (currentLog) {
         // Check if a newer log file appeared (Xcode sometimes creates multiple logs)
         if (currentLog.path !== lastLogPath) {
@@ -829,7 +852,7 @@ class XcodeMCPServer {
     const maxAttempts = 60; // 30 seconds
 
     while (attempts < maxAttempts) {
-      newLog = await this.getLatestBuildLog(actualProjectPath);
+      newLog = await this.getLatestBuildLog(projectPath);
       
       if (newLog && (!initialLog || newLog.path !== initialLog.path || 
                      newLog.mtime.getTime() > initialTime)) {
@@ -851,7 +874,7 @@ class XcodeMCPServer {
     const buildMaxAttempts = 600; // 5 minutes
 
     while (attempts < buildMaxAttempts) {
-      const currentLog = await this.getLatestBuildLog(actualProjectPath);
+      const currentLog = await this.getLatestBuildLog(projectPath);
       if (currentLog) {
         const currentModified = currentLog.mtime.getTime();
         if (currentModified === lastModified) {
