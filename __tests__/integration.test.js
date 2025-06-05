@@ -46,7 +46,10 @@ afterAll(() => {
   console.error = originalConsoleError;
 });
 
-describe('Integration Tests', () => {
+// Skip integration tests when Xcode is not available
+const describeIfXcode = process.env.SKIP_XCODE_TESTS ? describe.skip : describe;
+
+describeIfXcode('Integration Tests', () => {
   let XcodeMCPServer;
   let mockProcess;
 
@@ -59,7 +62,9 @@ describe('Integration Tests', () => {
     mockProcess = new EventEmitter();
     mockProcess.stdout = new EventEmitter();
     mockProcess.stderr = new EventEmitter();
+    mockProcess.kill = jest.fn();
     jest.clearAllMocks();
+    mockSpawn.mockClear();
     mockSpawn.mockReturnValue(mockProcess);
   });
 

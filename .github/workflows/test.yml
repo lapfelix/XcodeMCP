@@ -25,10 +25,27 @@ jobs:
     - name: Install dependencies
       run: npm ci
     
-    - name: Run tests
+    - name: Check for Xcode
+      id: check_xcode
+      run: |
+        if command -v xcodebuild &> /dev/null; then
+          echo "has_xcode=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_xcode=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Run tests (with Xcode)
+      if: steps.check_xcode.outputs.has_xcode == 'true'
       run: npm test
       env:
         NODE_ENV: test
+    
+    - name: Run tests (without Xcode)
+      if: steps.check_xcode.outputs.has_xcode == 'false'
+      run: npm test
+      env:
+        NODE_ENV: test
+        SKIP_XCODE_TESTS: true
     
     - name: Run linter (if available)
       run: npm run lint --if-present

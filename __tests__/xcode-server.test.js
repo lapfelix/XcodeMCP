@@ -47,7 +47,10 @@ afterAll(() => {
   console.error = originalConsoleError;
 });
 
-describe('XcodeMCPServer', () => {
+// Skip tests when Xcode is not available
+const describeIfXcode = process.env.SKIP_XCODE_TESTS ? describe.skip : describe;
+
+describeIfXcode('XcodeMCPServer', () => {
   let XcodeMCPServer;
   let mockProcess;
 
