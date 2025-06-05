@@ -1,6 +1,7 @@
 # XcodeMCP
 
 [![npm version](https://img.shields.io/npm/v/xcodemcp.svg)](https://www.npmjs.com/package/xcodemcp)
+[![Test Status](https://github.com/lapfelix/XcodeMCP/actions/workflows/test.yml/badge.svg)](https://github.com/lapfelix/XcodeMCP/actions/workflows/test.yml)
 
 MCP server for Xcode build automation and log parsing.
 
