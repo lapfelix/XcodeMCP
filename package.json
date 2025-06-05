@@ -1,10 +1,12 @@
 {
-  "name": "xcode-mcp",
+  "name": "xcodemcp",
   "version": "1.0.0",
   "description": "Model Context Protocol server for Xcode build automation and log parsing",
   "main": "index.js",
   "type": "module",
-  "bin": "./index.js",
+  "bin": {
+    "xcodemcp": "./index.js"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",

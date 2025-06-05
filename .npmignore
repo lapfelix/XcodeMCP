@@ -1,0 +1,18 @@
+# Test files
+__tests__/
+jest.config.js
+test.js
+
+# Development files
+.gitignore
+CLAUDE.md
+
+# Git files
+.git/
+.github/
+
+# macOS files
+.DS_Store
+
+# Logs
+*.log
