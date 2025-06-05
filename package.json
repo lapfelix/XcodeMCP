@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "bin": {
-    "xcodemcp": "./index.js"
+    "xcodemcp": "index.js"
   },
   "scripts": {
     "start": "node index.js",
@@ -24,7 +24,9 @@
   "engines": {
     "node": ">=18"
   },
-  "os": ["darwin"],
+  "os": [
+    "darwin"
+  ],
   "keywords": [
     "mcp",
     "xcode",
@@ -47,3 +49,4 @@
     "url": "https://github.com/lapfelix/XcodeMCP/issues"
   }
 }
+
