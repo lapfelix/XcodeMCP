@@ -45,7 +45,10 @@ afterAll(() => {
   console.error = originalConsoleError;
 });
 
-describe('MCP Tool Handlers', () => {
+// Skip MCP handler tests when Xcode is not available  
+const describeIfXcode = process.env.SKIP_XCODE_TESTS ? describe.skip : describe;
+
+describeIfXcode('MCP Tool Handlers', () => {
   let XcodeMCPServer;
   let server;
   let listToolsHandler;
