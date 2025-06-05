@@ -2,9 +2,11 @@ import { jest } from '@jest/globals';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
+const mockSpawn = jest.fn();
+
 // Mock child_process
 jest.mock('child_process', () => ({
-  spawn: jest.fn()
+  spawn: mockSpawn
 }));
 
 // Mock MCP SDK
@@ -34,6 +36,16 @@ jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
   }
 }));
 
+// Suppress console.error during tests
+const originalConsoleError = console.error;
+beforeAll(() => {
+  console.error = jest.fn();
+});
+
+afterAll(() => {
+  console.error = originalConsoleError;
+});
+
 describe('Integration Tests', () => {
   let XcodeMCPServer;
   let mockProcess;
@@ -48,7 +60,7 @@ describe('Integration Tests', () => {
     mockProcess.stdout = new EventEmitter();
     mockProcess.stderr = new EventEmitter();
     jest.clearAllMocks();
-    spawn.mockReturnValue(mockProcess);
+    mockSpawn.mockReturnValue(mockProcess);
   });
 
   afterEach(() => {
@@ -73,7 +85,7 @@ describe('Integration Tests', () => {
       mockProcess = new EventEmitter();
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
-      spawn.mockReturnValue(mockProcess);
+      mockSpawn.mockReturnValue(mockProcess);
       
       // Step 2: Get workspace info
       const infoPromise = server.getWorkspaceInfo();
@@ -98,7 +110,7 @@ describe('Integration Tests', () => {
       mockProcess = new EventEmitter();
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
-      spawn.mockReturnValue(mockProcess);
+      mockSpawn.mockReturnValue(mockProcess);
       
       // Step 3: Build project
       const buildPromise = server.build();
@@ -133,7 +145,7 @@ describe('Integration Tests', () => {
       mockProcess = new EventEmitter();
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
-      spawn.mockReturnValue(mockProcess);
+      mockSpawn.mockReturnValue(mockProcess);
       
       // Step 2: Set active scheme to test scheme
       const setSchemePromise = server.setActiveScheme('TestApp-Tests');
@@ -149,7 +161,7 @@ describe('Integration Tests', () => {
       mockProcess = new EventEmitter();
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
-      spawn.mockReturnValue(mockProcess);
+      mockSpawn.mockReturnValue(mockProcess);
       
       // Step 3: Run tests with arguments
       const testArgs = ['--verbose', '--parallel-testing-enabled', 'YES'];
@@ -284,7 +296,7 @@ describe('Integration Tests', () => {
       mockProcess = new EventEmitter();
       mockProcess.stdout = new EventEmitter();
       mockProcess.stderr = new EventEmitter();
-      spawn.mockReturnValue(mockProcess);
+      mockSpawn.mockReturnValue(mockProcess);
       
       // Step 2: Start debugging
       const debugPromise = server.debug('TestApp', false);

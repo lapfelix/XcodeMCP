@@ -30,9 +30,20 @@ jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
 }));
 
 // Mock child_process
+const mockSpawn = jest.fn();
 jest.mock('child_process', () => ({
-  spawn: jest.fn()
+  spawn: mockSpawn
 }));
+
+// Suppress console.error during tests
+const originalConsoleError = console.error;
+beforeAll(() => {
+  console.error = jest.fn();
+});
+
+afterAll(() => {
+  console.error = originalConsoleError;
+});
 
 describe('MCP Tool Handlers', () => {
   let XcodeMCPServer;

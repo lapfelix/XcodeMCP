@@ -1,17 +1,20 @@
 import { jest } from '@jest/globals';
-import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
+import * as childProcess from 'child_process';
 
-// Mock the child_process spawn function
+// Get the mocked spawn function
+const mockSpawn = jest.fn();
+
+// Mock the child_process module
 jest.mock('child_process', () => ({
-  spawn: jest.fn()
+  spawn: mockSpawn
 }));
 
 // Mock the MCP SDK
 jest.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
   Server: jest.fn().mockImplementation(() => ({
     setRequestHandler: jest.fn(),
-    connect: jest.fn()
+    connect: jest.fn().mockResolvedValue()
   }))
 }));
 
@@ -34,6 +37,16 @@ jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
   }
 }));
 
+// Suppress console.error during tests
+const originalConsoleError = console.error;
+beforeAll(() => {
+  console.error = jest.fn();
+});
+
+afterAll(() => {
+  console.error = originalConsoleError;
+});
+
 describe('XcodeMCPServer', () => {
   let XcodeMCPServer;
   let mockProcess;
@@ -41,7 +54,7 @@ describe('XcodeMCPServer', () => {
   beforeAll(async () => {
     // Import after mocks are set up
     const module = await import('../index.js');
-    XcodeMCPServer = module.default || module.XcodeMCPServer;
+    XcodeMCPServer = module.XcodeMCPServer;
   });
 
   beforeEach(() => {
@@ -49,9 +62,10 @@ describe('XcodeMCPServer', () => {
     mockProcess = new EventEmitter();
     mockProcess.stdout = new EventEmitter();
     mockProcess.stderr = new EventEmitter();
+    mockProcess.kill = jest.fn();
     
     jest.clearAllMocks();
-    spawn.mockReturnValue(mockProcess);
+    mockSpawn.mockReturnValue(mockProcess);
   });
 
   afterEach(() => {

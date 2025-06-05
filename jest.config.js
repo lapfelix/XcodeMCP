@@ -7,5 +7,10 @@ export default {
     '!**/node_modules/**'
   ],
   clearMocks: true,
-  resetMocks: true
+  resetMocks: true,
+  testEnvironmentOptions: {
+    env: {
+      NODE_ENV: 'test'
+    }
+  }
 };

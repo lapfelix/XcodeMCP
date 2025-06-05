@@ -934,5 +934,7 @@ class XcodeMCPServer {
 export { XcodeMCPServer };
 
 // Start the server when this file is executed directly
-const server = new XcodeMCPServer();
-server.start().catch(console.error);
+if (process.env.NODE_ENV !== 'test') {
+  const server = new XcodeMCPServer();
+  server.start().catch(console.error);
+}

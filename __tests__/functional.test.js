@@ -17,7 +17,7 @@ describe('XcodeMCP Server Functional Tests', () => {
   test('should validate package.json structure', async () => {
     const packageJson = await import('../package.json', { assert: { type: 'json' } });
     
-    expect(packageJson.default.name).toBe('xcode-mcp-server');
+    expect(packageJson.default.name).toBe('xcodemcp');
     expect(packageJson.default.type).toBe('module');
     expect(packageJson.default.scripts.start).toBeDefined();
     expect(packageJson.default.scripts.test).toBeDefined();

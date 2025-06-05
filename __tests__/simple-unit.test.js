@@ -1,44 +1,54 @@
 import { jest } from '@jest/globals';
 
+// Mock dependencies
+jest.mock('child_process', () => ({
+  spawn: jest.fn().mockReturnValue({
+    stdout: { on: jest.fn() },
+    stderr: { on: jest.fn() },
+    on: jest.fn()
+  })
+}));
+
+jest.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
+  Server: jest.fn().mockImplementation(() => ({
+    setRequestHandler: jest.fn(),
+    connect: jest.fn()
+  }))
+}));
+
+jest.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
+  StdioServerTransport: jest.fn()
+}));
+
+jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
+  CallToolRequestSchema: 'CallToolRequestSchema',
+  ErrorCode: {
+    MethodNotFound: 'MethodNotFound',
+    InternalError: 'InternalError'
+  },
+  ListToolsRequestSchema: 'ListToolsRequestSchema',
+  McpError: class McpError extends Error {
+    constructor(code, message) {
+      super(message);
+      this.code = code;
+    }
+  }
+}));
+
+// Suppress console.error during tests
+const originalConsoleError = console.error;
+beforeAll(() => {
+  console.error = jest.fn();
+});
+
+afterAll(() => {
+  console.error = originalConsoleError;
+});
+
 describe('XcodeMCPServer Basic Tests', () => {
   let XcodeMCPServer;
 
   beforeAll(async () => {
-    // Mock all dependencies before importing
-    jest.unstable_mockModule('child_process', () => ({
-      spawn: jest.fn().mockReturnValue({
-        stdout: { on: jest.fn() },
-        stderr: { on: jest.fn() },
-        on: jest.fn()
-      })
-    }));
-
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/index.js', () => ({
-      Server: jest.fn().mockImplementation(() => ({
-        setRequestHandler: jest.fn(),
-        connect: jest.fn()
-      }))
-    }));
-
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/server/stdio.js', () => ({
-      StdioServerTransport: jest.fn()
-    }));
-
-    jest.unstable_mockModule('@modelcontextprotocol/sdk/types.js', () => ({
-      CallToolRequestSchema: 'CallToolRequestSchema',
-      ErrorCode: {
-        MethodNotFound: 'MethodNotFound',
-        InternalError: 'InternalError'
-      },
-      ListToolsRequestSchema: 'ListToolsRequestSchema',
-      McpError: class McpError extends Error {
-        constructor(code, message) {
-          super(message);
-          this.code = code;
-        }
-      }
-    }));
-
     const module = await import('../index.js');
     XcodeMCPServer = module.XcodeMCPServer;
   });
