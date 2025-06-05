@@ -1,5 +1,7 @@
 # XcodeMCP
 
+[![npm version](https://img.shields.io/npm/v/xcodemcp.svg)](https://www.npmjs.com/package/xcodemcp)
+
 MCP server for Xcode build automation and log parsing.
 
 ## What it does
@@ -20,31 +22,32 @@ MCP server for Xcode build automation and log parsing.
 
 ### Quick Install
 
-- [<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect/mcp/install?name=xcodemcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22github%3Alapfelix%2FXcodeMCP%22%5D%7D)
-- [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect/mcp/install?name=xcodemcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22github%3Alapfelix%2FXcodeMCP%22%5D%7D&quality=insiders)
+- [<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect/mcp/install?name=xcodemcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22xcodemcp%40latest%22%5D%7D)
+- [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect/mcp/install?name=xcodemcp&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22xcodemcp%40latest%22%5D%7D&quality=insiders)
 
 ### Install from npm
 
+Run directly with npx:
+```bash
+brew install xclogparser
+npx xcodemcp@latest
+```
+
+Or install globally:
 ```bash
 brew install xclogparser
 npm install -g xcodemcp
 ```
 
-### Manual Setup
+### MCP Configuration
 
-Run directly from GitHub:
-```bash
-brew install xclogparser
-npx github:lapfelix/XcodeMCP
-```
-
-Or add to your MCP configuration:
+Add to your MCP configuration:
 ```json
 {
   "mcpServers": {
     "xcodemcp": {
       "command": "npx",
-      "args": ["github:lapfelix/XcodeMCP"],
+      "args": ["xcodemcp@latest"],
       "env": {}
     }
   }
