@@ -55,6 +55,17 @@ Add to your MCP configuration:
 }
 ```
 
+### Claude Code CLI Setup
+
+To add XcodeMCP to Claude Code using the command line:
+```bash
+claude mcp add-json XcodeMCP '{
+  "command": "npx",
+  "args": ["xcodemcp@latest"],
+  "env": {}
+}'
+```
+
 Or clone locally:
 ```bash
 git clone https://github.com/lapfelix/XcodeMCP.git
@@ -67,6 +78,7 @@ node index.js
 
 - `xcode_open_project` - Open Xcode projects and workspaces
 - `xcode_build` - Build and get errors/warnings  
+- `xcode_build_scheme` - Build with specific scheme and destination
 - `xcode_clean` - Clean build artifacts
 - `xcode_test` - Run unit and UI tests
 - `xcode_run` - Run the active scheme
