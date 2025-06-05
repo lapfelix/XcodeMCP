@@ -1,11 +1,11 @@
 import { jest } from '@jest/globals';
-import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
+// Create the mock spawn function before importing anything
 const mockSpawn = jest.fn();
 
-// Mock child_process
-jest.mock('child_process', () => ({
+// Mock child_process before any imports
+jest.unstable_mockModule('child_process', () => ({
   spawn: mockSpawn
 }));
 

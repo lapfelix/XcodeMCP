@@ -28,10 +28,12 @@ jobs:
     - name: Check for Xcode
       id: check_xcode
       run: |
-        if command -v xcodebuild &> /dev/null; then
+        # Check if Xcode app is accessible via osascript
+        if osascript -l JavaScript -e "Application('Xcode')" &> /dev/null; then
           echo "has_xcode=true" >> $GITHUB_OUTPUT
         else
           echo "has_xcode=false" >> $GITHUB_OUTPUT
+          echo "Xcode application not accessible via JXA"
         fi
     
     - name: Run tests (with Xcode)
