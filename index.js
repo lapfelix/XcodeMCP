@@ -520,9 +520,9 @@ class XcodeMCPServer {
       return { content: [{ type: 'text', text: 'Project path is required. Please specify the path to your .xcodeproj or .xcworkspace file.' }] };
     }
     
-    // Convert relative path to absolute path
+    // Require absolute paths to avoid confusion
     if (!path.isAbsolute(projectPath)) {
-      projectPath = path.resolve(projectPath);
+      return { content: [{ type: 'text', text: `Project path must be absolute, got: ${projectPath}\nExample: /Users/username/path/to/project.xcodeproj` }] };
     }
     
     // Build using Apple's recommended approach with actionResult
