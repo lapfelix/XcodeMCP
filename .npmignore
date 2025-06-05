@@ -2,6 +2,11 @@
 __tests__/
 jest.config.js
 test.js
+*_test.js
+test_*.js
+*_parser.js
+debug_*.js
+simple_*.js
 
 # Development files
 .gitignore
