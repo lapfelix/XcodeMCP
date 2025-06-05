@@ -53,8 +53,8 @@ jobs:
     
     - name: Run tests
       run: |
-        # Only run unit tests in CI, skip integration and Xcode tests
-        npm test -- --testPathIgnorePatterns="__tests__/integration.test.js|__tests__/xcode-server.test.js"
+        # Only run simple unit tests in CI, skip all tests that require Xcode
+        npm test -- --testPathPattern="simple-unit|functional" --testPathIgnorePatterns="integration|xcode|mcp-handlers"
       env:
         NODE_ENV: test
         CI: true
