@@ -1,6 +1,6 @@
 {
   "name": "xcodemcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Model Context Protocol server for Xcode build automation and log parsing",
   "main": "index.js",
   "type": "module",

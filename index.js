@@ -281,6 +281,24 @@ class XcodeMCPServer {
             },
           },
           {
+            name: 'xcode_build_scheme',
+            description: 'Build the workspace with a specific scheme and destination',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                scheme: {
+                  type: 'string',
+                  description: 'Name of the scheme to build',
+                },
+                destination: {
+                  type: 'string',
+                  description: 'Build destination (optional)',
+                },
+              },
+              required: ['scheme'],
+            },
+          },
+          {
             name: 'xcode_get_schemes',
             description: 'Get list of available schemes',
             inputSchema: {
@@ -440,6 +458,8 @@ class XcodeMCPServer {
             return await this.openProject(args.path);
           case 'xcode_build':
             return await this.build();
+          case 'xcode_build_scheme':
+            return await this.buildScheme(args.scheme, args.destination);
           case 'xcode_clean':
             return await this.clean();
           case 'xcode_test':
@@ -593,6 +613,151 @@ class XcodeMCPServer {
       });
     } else {
       message = '✅ BUILD SUCCESSFUL';
+    }
+
+    return { content: [{ type: 'text', text: message }] };
+  }
+
+  async buildScheme(schemeName, destination = null) {
+    // Get project path from open workspace in Xcode
+    const getProjectScript = `
+      const app = Application('Xcode');
+      const docs = app.workspaceDocuments();
+      if (docs.length === 0) throw new Error('No workspace document open');
+      
+      docs[0].path();
+    `;
+    
+    let projectPath;
+    try {
+      projectPath = await this.executeJXA(getProjectScript);
+    } catch (error) {
+      return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
+    }
+
+    // Set the active scheme first
+    const setSchemeScript = `
+      const app = Application('Xcode');
+      const workspace = app.activeWorkspaceDocument();
+      if (!workspace) throw new Error('No active workspace');
+      
+      workspace.setActiveScheme("${schemeName}");
+      "Scheme set to ${schemeName}";
+    `;
+    
+    try {
+      await this.executeJXA(setSchemeScript);
+    } catch (error) {
+      return { content: [{ type: 'text', text: `Failed to set scheme '${schemeName}': ${error.message}` }] };
+    }
+
+    // Set destination if provided
+    if (destination) {
+      const setDestinationScript = `
+        const app = Application('Xcode');
+        const workspace = app.activeWorkspaceDocument();
+        if (!workspace) throw new Error('No active workspace');
+        
+        workspace.setActiveRunDestination("${destination}");
+        "Destination set to ${destination}";
+      `;
+      
+      try {
+        await this.executeJXA(setDestinationScript);
+      } catch (error) {
+        return { content: [{ type: 'text', text: `Failed to set destination '${destination}': ${error.message}` }] };
+      }
+    }
+
+    // Get initial build log to compare timestamps
+    const initialLog = await this.getLatestBuildLog(projectPath);
+    const initialTime = Date.now();
+
+    // Trigger build using JXA
+    const buildScript = `
+      const app = Application('Xcode');
+      const docs = app.workspaceDocuments();
+      if (docs.length === 0) throw new Error('No workspace document open');
+      
+      const workspace = docs[0];
+      workspace.build();
+      'Build triggered for scheme ${schemeName}';
+    `;
+    
+    await this.executeJXA(buildScript);
+
+    // Wait for new build log to appear or existing one to be modified
+    let newLog = null;
+    let attempts = 0;
+    const maxAttempts = 60; // 30 seconds
+
+    while (attempts < maxAttempts) {
+      newLog = await this.getLatestBuildLog(projectPath);
+      
+      if (newLog && (!initialLog || newLog.path !== initialLog.path || 
+                     newLog.mtime.getTime() > initialTime)) {
+        break;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+
+    if (!newLog) {
+      return { content: [{ type: 'text', text: `Build triggered for scheme '${schemeName}' but no build log found` }] };
+    }
+
+    // Wait for build to complete by checking if we can parse the latest log
+    let lastLogPath = newLog.path;
+    attempts = 0;
+    const buildMaxAttempts = 600; // 5 minutes
+
+    while (attempts < buildMaxAttempts) {
+      const currentLog = await this.getLatestBuildLog(projectPath);
+      if (currentLog) {
+        // Check if a newer log file appeared (Xcode sometimes creates multiple logs)
+        if (currentLog.path !== lastLogPath) {
+          console.error(`Newer build log detected: ${currentLog.path}`);
+          newLog = currentLog;
+          lastLogPath = currentLog.path;
+        }
+        
+        // Test if xclogparser can parse the current log file
+        const canParse = await this.canParseLog(currentLog.path);
+        if (canParse) {
+          console.error(`Build log is ready for parsing: ${currentLog.path}`);
+          newLog = currentLog;
+          break;
+        }
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      attempts++;
+    }
+
+    // Parse build results
+    const results = await this.parseBuildLog(newLog.path);
+    
+    let message = '';
+    const schemeInfo = destination ? `scheme '${schemeName}' for destination '${destination}'` : `scheme '${schemeName}'`;
+    
+    if (results.errors.length > 0) {
+      message = `❌ BUILD FAILED for ${schemeInfo} (${results.errors.length} errors)\n\nERRORS:\n`;
+      results.errors.forEach(error => {
+        message += `  • ${error}\n`;
+      });
+      // Throw MCP error for build failures
+      throw new McpError(
+        ErrorCode.InternalError,
+        message
+      );
+    } else if (results.warnings.length > 0) {
+      message = `⚠️ BUILD COMPLETED WITH WARNINGS for ${schemeInfo} (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
+      results.warnings.forEach(warning => {
+        message += `  • ${warning}\n`;
+      });
+    } else {
+      message = `✅ BUILD SUCCESSFUL for ${schemeInfo}`;
     }
 
     return { content: [{ type: 'text', text: message }] };
