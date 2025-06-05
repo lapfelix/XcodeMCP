@@ -274,10 +274,16 @@ class XcodeMCPServer {
           },
           {
             name: 'xcode_build',
-            description: 'Build the active workspace using the current scheme',
+            description: 'Build a specific Xcode project or workspace',
             inputSchema: {
               type: 'object',
-              properties: {},
+              properties: {
+                path: {
+                  type: 'string',
+                  description: 'Path to the .xcodeproj or .xcworkspace file to build',
+                },
+              },
+              required: ['path'],
             },
           },
           {
@@ -457,7 +463,7 @@ class XcodeMCPServer {
           case 'xcode_open_project':
             return await this.openProject(args.path);
           case 'xcode_build':
-            return await this.build();
+            return await this.build(args.path);
           case 'xcode_build_scheme':
             return await this.buildScheme(args.scheme, args.destination);
           case 'xcode_clean':
@@ -509,88 +515,68 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async build() {
-    // Get project path from open workspace in Xcode
-    const getProjectScript = `
-      const app = Application('Xcode');
-      const docs = app.workspaceDocuments();
-      if (docs.length === 0) throw new Error('No workspace document open');
-      
-      docs[0].path();
-    `;
+  async build(projectPath) {
+    if (!projectPath) {
+      return { content: [{ type: 'text', text: 'Project path is required. Please specify the path to your .xcodeproj or .xcworkspace file.' }] };
+    }
     
-    let projectPath;
-    try {
-      projectPath = await this.executeJXA(getProjectScript);
-    } catch (error) {
-      return { content: [{ type: 'text', text: 'No project opened. Please open a project first.' }] };
-    }
-
-    // Get initial build log to compare timestamps
-    const initialLog = await this.getLatestBuildLog(projectPath);
-    const initialTime = Date.now();
-
-    // Trigger build using JXA
-    const script = `
-      const app = Application('Xcode');
-      const docs = app.workspaceDocuments();
-      if (docs.length === 0) throw new Error('No workspace document open');
-      
-      const workspace = docs[0];
-      workspace.build();
-      'Build triggered';
-    `;
-    
-    await this.executeJXA(script);
-
-    // Wait for new build log to appear or existing one to be modified
-    let newLog = null;
-    let attempts = 0;
-    const maxAttempts = 60; // 30 seconds
-
-    while (attempts < maxAttempts) {
-      newLog = await this.getLatestBuildLog(projectPath);
-      
-      if (newLog && (!initialLog || newLog.path !== initialLog.path || 
-                     newLog.mtime.getTime() > initialTime)) {
-        break;
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      attempts++;
-    }
-
-    if (!newLog) {
-      return { content: [{ type: 'text', text: 'Build triggered but no build log found' }] };
-    }
-
-    // Wait for build to complete by checking if we can parse the latest log
-    let lastLogPath = newLog.path;
-    attempts = 0;
-    const buildMaxAttempts = 600; // 5 minutes
-
-    while (attempts < buildMaxAttempts) {
-      const currentLog = await this.getLatestBuildLog(projectPath);
-      if (currentLog) {
-        // Check if a newer log file appeared (Xcode sometimes creates multiple logs)
-        if (currentLog.path !== lastLogPath) {
-          console.error(`Newer build log detected: ${currentLog.path}`);
-          newLog = currentLog;
-          lastLogPath = currentLog.path;
+    // Build using Apple's recommended approach with actionResult
+    const buildScript = `
+      (function() {
+        const app = Application('Xcode');
+        
+        // Open the project (this will bring it to front if not already open)
+        app.open(${JSON.stringify(projectPath)});
+        
+        // Find the workspace document for this project
+        const docs = app.workspaceDocuments();
+        let targetDoc = null;
+        
+        for (let i = 0; i < docs.length; i++) {
+          if (docs[i].path() === ${JSON.stringify(projectPath)}) {
+            targetDoc = docs[i];
+            break;
+          }
         }
         
-        // Test if xclogparser can parse the current log file
-        const canParse = await this.canParseLog(currentLog.path);
-        if (canParse) {
-          console.error(`Build log is ready for parsing: ${currentLog.path}`);
-          newLog = currentLog;
-          break;
+        if (!targetDoc) {
+          throw new Error('Could not find project after opening');
         }
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      attempts++;
+        
+        // Build this specific workspace document and get the action result
+        const actionResult = targetDoc.build();
+        
+        // Wait for build to complete using Apple's approach
+        while (true) {
+          if (actionResult.completed()) {
+            break;
+          }
+          delay(0.5);
+        }
+        
+        return targetDoc.path();
+      })()
+    `;
+    
+    let actualProjectPath;
+    try {
+      actualProjectPath = await this.executeJXA(buildScript);
+    } catch (error) {
+      return { content: [{ type: 'text', text: `Failed to build project: ${error.message}` }] };
     }
+
+    // Build completed! Now get the final build log
+    console.error('Build completed, getting final log...');
+    
+    // Wait a moment for log to be finalized and then get it
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const newLog = await this.getLatestBuildLog(actualProjectPath);
+    if (!newLog) {
+      return { content: [{ type: 'text', text: 'Build completed but no build log found' }] };
+    }
+    
+    console.error(`Parsing build log: ${newLog.path}`);
 
     // Parse build results
     const results = await this.parseBuildLog(newLog.path);
@@ -670,7 +656,7 @@ class XcodeMCPServer {
     }
 
     // Get initial build log to compare timestamps
-    const initialLog = await this.getLatestBuildLog(projectPath);
+    const initialLog = await this.getLatestBuildLog(actualProjectPath);
     const initialTime = Date.now();
 
     // Trigger build using JXA
@@ -692,7 +678,7 @@ class XcodeMCPServer {
     const maxAttempts = 60; // 30 seconds
 
     while (attempts < maxAttempts) {
-      newLog = await this.getLatestBuildLog(projectPath);
+      newLog = await this.getLatestBuildLog(actualProjectPath);
       
       if (newLog && (!initialLog || newLog.path !== initialLog.path || 
                      newLog.mtime.getTime() > initialTime)) {
@@ -713,7 +699,7 @@ class XcodeMCPServer {
     const buildMaxAttempts = 600; // 5 minutes
 
     while (attempts < buildMaxAttempts) {
-      const currentLog = await this.getLatestBuildLog(projectPath);
+      const currentLog = await this.getLatestBuildLog(actualProjectPath);
       if (currentLog) {
         // Check if a newer log file appeared (Xcode sometimes creates multiple logs)
         if (currentLog.path !== lastLogPath) {
@@ -817,7 +803,7 @@ class XcodeMCPServer {
     }
 
     // Get initial build log to compare timestamps
-    const initialLog = await this.getLatestBuildLog(projectPath);
+    const initialLog = await this.getLatestBuildLog(actualProjectPath);
     const initialTime = Date.now();
 
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
@@ -843,7 +829,7 @@ class XcodeMCPServer {
     const maxAttempts = 60; // 30 seconds
 
     while (attempts < maxAttempts) {
-      newLog = await this.getLatestBuildLog(projectPath);
+      newLog = await this.getLatestBuildLog(actualProjectPath);
       
       if (newLog && (!initialLog || newLog.path !== initialLog.path || 
                      newLog.mtime.getTime() > initialTime)) {
@@ -865,7 +851,7 @@ class XcodeMCPServer {
     const buildMaxAttempts = 600; // 5 minutes
 
     while (attempts < buildMaxAttempts) {
-      const currentLog = await this.getLatestBuildLog(projectPath);
+      const currentLog = await this.getLatestBuildLog(actualProjectPath);
       if (currentLog) {
         const currentModified = currentLog.mtime.getTime();
         if (currentModified === lastModified) {
