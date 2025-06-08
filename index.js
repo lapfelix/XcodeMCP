@@ -92,9 +92,19 @@ class XcodeMCPServer {
   }
 
   async findProjectDerivedData(projectPath) {
+    const customDerivedDataLocation = await this.getCustomDerivedDataLocationFromXcodePreferences();
     const projectName = path.basename(projectPath, path.extname(projectPath));
-    const derivedDataPath = path.join(os.homedir(), 'Library/Developer/Xcode/DerivedData');
+    let derivedDataPath = null;
     
+    if (!customDerivedDataLocation) {
+      derivedDataPath = path.join(os.homedir(), 'Library/Developer/Xcode/DerivedData');
+    } else if (customDerivedDataLocation.startsWith('/')) {
+      derivedDataPath = customDerivedDataLocation;
+    } else {
+      const localProjectPath = path.dirname(projectPath);
+      derivedDataPath = path.join(localProjectPath, customDerivedDataLocation);
+    }
+
     try {
       const dirs = await readdir(derivedDataPath);
       const matches = dirs.filter(dir => dir.startsWith(`${projectName}-`));
@@ -119,6 +129,34 @@ class XcodeMCPServer {
       return null;
     }
   }
+  
+  async getCustomDerivedDataLocationFromXcodePreferences() {
+    return new Promise((resolve) => {
+      const defaults = spawn('defaults', ['read', 'com.apple.dt.Xcode', 'IDECustomDerivedDataLocation']);
+      let stdout = '';
+      let stderr = '';
+
+      defaults.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      defaults.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      defaults.on('close', (code) => {
+        if (code === 0 && stdout.trim()) {
+          resolve(stdout.trim());
+        } else {
+          resolve(null);
+        }
+      });
+
+      defaults.on('error', () => {
+        resolve(null);
+      });
+    });
+  } 
 
   async getLatestBuildLog(projectPath) {
     const derivedData = await this.findProjectDerivedData(projectPath);
