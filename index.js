@@ -984,7 +984,7 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async test(commandLineArguments = []) {
+  async test(projectPath, commandLineArguments = []) {
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
       (function() {
@@ -1004,10 +1004,10 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async run(commandLineArguments = []) {
+  async run(projectPath, commandLineArguments = []) {
 
     // Get initial build log to compare timestamps
-    const initialLog = await this.getLatestBuildLog(actualProjectPath);
+    const initialLog = await this.getLatestBuildLog(projectPath);
     const initialTime = Date.now();
 
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
@@ -1099,7 +1099,7 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: message }] };
   }
 
-  async debug(scheme, skipBuilding = false) {
+  async debug(projectPath, scheme, skipBuilding = false) {
     const hasParams = scheme || skipBuilding;
     let paramsObj = {};
     if (scheme) paramsObj.scheme = scheme;
