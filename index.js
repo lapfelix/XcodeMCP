@@ -206,41 +206,48 @@ class XcodeMCPServer {
       });
       
       command.on('close', (code) => {
+        // xclogparser returns non-zero when there are build errors, but that's not a parsing failure
+        // Only treat it as a failure if stderr indicates an actual parsing problem
         if (code !== 0) {
           const errorMessage = stderr.trim() || 'No error details available';
           
-          // Check if this is a log file parsing error and we can retry
-          if ((errorMessage.includes('not a valid SLF log') || 
-               errorMessage.includes('not a valid xcactivitylog file') ||
-               errorMessage.includes('corrupted') || 
-               errorMessage.includes('incomplete')) 
-              && retryCount < maxRetries) {
-            console.error(`XCLogParser failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${errorMessage}`);
-            console.error(`Retrying in ${delays[retryCount]}ms...`);
+          // Check if this is actually a log file parsing error (not just build errors)
+          if (errorMessage.includes('not a valid SLF log') || 
+              errorMessage.includes('not a valid xcactivitylog file') ||
+              errorMessage.includes('corrupted') || 
+              errorMessage.includes('incomplete') ||
+              errorMessage.includes('Error while parsing') ||
+              errorMessage.includes('Failed to parse')) {
             
-            setTimeout(async () => {
-              const result = await this.parseBuildLog(logPath, retryCount + 1, maxRetries);
-              resolve(result);
-            }, delays[retryCount]);
+            if (retryCount < maxRetries) {
+              console.error(`XCLogParser failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${errorMessage}`);
+              console.error(`Retrying in ${delays[retryCount]}ms...`);
+              
+              setTimeout(async () => {
+                const result = await this.parseBuildLog(logPath, retryCount + 1, maxRetries);
+                resolve(result);
+              }, delays[retryCount]);
+              return;
+            }
+            
+            console.error('xclogparser failed:', stderr);
+            resolve({
+              errors: [
+                'XCLogParser failed to parse the build log.',
+                '',
+                'This may indicate:',
+                '• The log file is corrupted or incomplete',
+                '• An unsupported Xcode version was used',
+                '• XCLogParser needs to be updated',
+                '',
+                `Error details: ${errorMessage}`
+              ],
+              warnings: [], 
+              notes: []
+            });
             return;
           }
-          
-          console.error('xclogparser failed:', stderr);
-          resolve({
-            errors: [
-              'XCLogParser failed to parse the build log.',
-              '',
-              'This may indicate:',
-              '• The log file is corrupted or incomplete',
-              '• An unsupported Xcode version was used',
-              '• XCLogParser needs to be updated',
-              '',
-              `Error details: ${errorMessage}`
-            ],
-            warnings: [], 
-            notes: []
-          });
-          return;
+          // If stderr doesn't indicate parsing errors, treat stdout as valid even with non-zero exit
         }
         
         try {
@@ -347,7 +354,7 @@ class XcodeMCPServer {
           },
           {
             name: 'xcode_build',
-            description: 'Build a specific Xcode project or workspace',
+            description: 'Build a specific Xcode project or workspace. If scheme is not provided, builds the currently active scheme. If destination is not provided, uses the currently active destination.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -355,30 +362,16 @@ class XcodeMCPServer {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj or .xcworkspace file to build',
                 },
-              },
-              required: ['path'],
-            },
-          },
-          {
-            name: 'xcode_build_scheme',
-            description: 'Build a specific project/workspace with a scheme and destination',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                path: {
-                  type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
-                },
                 scheme: {
                   type: 'string',
-                  description: 'Name of the scheme to build',
+                  description: 'Name of the scheme to build (optional - uses active scheme if not provided)',
                 },
                 destination: {
                   type: 'string',
-                  description: 'Build destination (optional)',
+                  description: 'Build destination (optional - uses active destination if not provided)',
                 },
               },
-              required: ['path', 'scheme'],
+              required: ['path'],
             },
           },
           {
@@ -567,9 +560,7 @@ class XcodeMCPServer {
           case 'xcode_open_project':
             return await this.openProject(args.path);
           case 'xcode_build':
-            return await this.build(args.path);
-          case 'xcode_build_scheme':
-            return await this.buildScheme(args.path, args.scheme, args.destination);
+            return await this.build(args.path, args.scheme, args.destination);
           case 'xcode_clean':
             return await this.clean(args.path);
           case 'xcode_test':
@@ -645,185 +636,39 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async build(projectPath) {
-    if (!projectPath) {
-      return { content: [{ type: 'text', text: 'Project path is required. Please specify the path to your .xcodeproj or .xcworkspace file.' }] };
-    }
-    
-    // Require absolute paths to avoid confusion
-    if (!path.isAbsolute(projectPath)) {
-      return { content: [{ type: 'text', text: `Project path must be absolute, got: ${projectPath}\nExample: /Users/username/path/to/project.xcodeproj` }] };
-    }
-    
-    // Check if the project file actually exists
-    if (!existsSync(projectPath)) {
-      return { content: [{ type: 'text', text: `Project file does not exist: ${projectPath}` }] };
-    }
-    
-    // For .xcodeproj files, also check if project.pbxproj exists inside
-    if (projectPath.endsWith('.xcodeproj')) {
-      const pbxprojPath = path.join(projectPath, 'project.pbxproj');
-      if (!existsSync(pbxprojPath)) {
-        return { content: [{ type: 'text', text: `Project is missing project.pbxproj file: ${pbxprojPath}` }] };
-      }
-    }
-    
-    // For .xcworkspace files, check if contents.xcworkspacedata exists
-    if (projectPath.endsWith('.xcworkspace')) {
-      const workspaceDataPath = path.join(projectPath, 'contents.xcworkspacedata');
-      if (!existsSync(workspaceDataPath)) {
-        return { content: [{ type: 'text', text: `Workspace is missing contents.xcworkspacedata file: ${workspaceDataPath}` }] };
-      }
-    }
-    
-    // Build using Apple's recommended approach with actionResult
-    const buildScript = `
-      (function() {
-        const app = Application('Xcode');
-        
-        // Open the project (this will bring it to front if not already open)
-        app.open(${JSON.stringify(projectPath)});
-        
-        // Find the workspace document for this project
-        const docs = app.workspaceDocuments();
-        let targetDoc = null;
-        
-        for (let i = 0; i < docs.length; i++) {
-          if (docs[i].path() === ${JSON.stringify(projectPath)}) {
-            targetDoc = docs[i];
-            break;
-          }
-        }
-        
-        if (!targetDoc) {
-          throw new Error('Could not find project after opening');
-        }
-        
-        // Build this specific workspace document and get the action result
-        const actionResult = targetDoc.build();
-        
-        // Wait for build to complete using Apple's approach
-        while (true) {
-          if (actionResult.completed()) {
-            break;
-          }
-          delay(0.5);
-        }
-        
-        return targetDoc.path();
-      })()
-    `;
-    
-    let actualProjectPath;
-    try {
-      actualProjectPath = await this.executeJXA(buildScript);
-    } catch (error) {
-      return { content: [{ type: 'text', text: `Failed to build project: ${error.message}` }] };
-    }
-
-    // Build completed! Now get the final build log
-    console.error('Build completed, getting final log...');
-    
-    // Wait a moment for log to be finalized and then get it
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const newLog = await this.getLatestBuildLog(actualProjectPath);
-    if (!newLog) {
-      return { content: [{ type: 'text', text: 'Build completed but no build log found' }] };
-    }
-    
-    console.error(`Parsing build log: ${newLog.path}`);
-
-    // Parse build results
-    const results = await this.parseBuildLog(newLog.path);
-    
-    let message = '';
-    if (results.errors.length > 0) {
-      message = `❌ BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
-      results.errors.forEach(error => {
-        message += `  • ${error}\n`;
-      });
-      // Throw MCP error for build failures
-      throw new McpError(
-        ErrorCode.InternalError,
-        message
-      );
-    } else if (results.warnings.length > 0) {
-      message = `⚠️ BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
-      results.warnings.forEach(warning => {
-        message += `  • ${warning}\n`;
-      });
-    } else {
-      message = '✅ BUILD SUCCESSFUL';
-    }
-
-    return { content: [{ type: 'text', text: message }] };
-  }
-
-  async buildScheme(projectPath, schemeName, destination = null) {
+  async build(projectPath, schemeName = null, destination = null) {
     // Validate project path
-    if (!projectPath) {
-      return { content: [{ type: 'text', text: 'Project path is required. Please specify the path to your .xcodeproj or .xcworkspace file.' }] };
-    }
-    
-    if (!path.isAbsolute(projectPath)) {
-      return { content: [{ type: 'text', text: `Project path must be absolute, got: ${projectPath}\nExample: /Users/username/path/to/project.xcodeproj` }] };
-    }
-    
-    // Check if the project file actually exists
-    if (!existsSync(projectPath)) {
-      return { content: [{ type: 'text', text: `Project file does not exist: ${projectPath}` }] };
-    }
-    
-    // For .xcodeproj files, also check if project.pbxproj exists inside
-    if (projectPath.endsWith('.xcodeproj')) {
-      const pbxprojPath = path.join(projectPath, 'project.pbxproj');
-      if (!existsSync(pbxprojPath)) {
-        return { content: [{ type: 'text', text: `Project is missing project.pbxproj file: ${pbxprojPath}` }] };
-      }
-    }
-    
-    // For .xcworkspace files, check if contents.xcworkspacedata exists
-    if (projectPath.endsWith('.xcworkspace')) {
-      const workspaceDataPath = path.join(projectPath, 'contents.xcworkspacedata');
-      if (!existsSync(workspaceDataPath)) {
-        return { content: [{ type: 'text', text: `Workspace is missing contents.xcworkspacedata file: ${workspaceDataPath}` }] };
-      }
-    }
+    const validationError = this.validateProjectPath(projectPath);
+    if (validationError) return validationError;
 
-    // Stop any existing builds first
-    try {
-      await this.stop();
-    } catch (error) {
-      // Ignore errors if nothing was running
-    }
-    
     // Open the project first
     await this.openProject(projectPath);
 
-    // Set the active scheme first
-    const setSchemeScript = `
-      (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
-        
-        const schemes = workspace.schemes();
-        const targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(schemeName)});
-        
-        if (!targetScheme) {
-          throw new Error('Scheme ' + ${JSON.stringify(schemeName)} + ' not found');
-        }
-        
-        workspace.activeScheme = targetScheme;
-        return 'Scheme set to ' + ${JSON.stringify(schemeName)};
-      })()
-    `;
-    
-    try {
-      await this.executeJXA(setSchemeScript);
-    } catch (error) {
-      return { content: [{ type: 'text', text: `Failed to set scheme '${schemeName}': ${error.message}` }] };
+    // Set scheme if provided
+    if (schemeName) {
+      const setSchemeScript = `
+        (function() {
+          const app = Application('Xcode');
+          const workspace = app.activeWorkspaceDocument();
+          if (!workspace) throw new Error('No active workspace');
+          
+          const schemes = workspace.schemes();
+          const targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(schemeName)});
+          
+          if (!targetScheme) {
+            throw new Error('Scheme ' + ${JSON.stringify(schemeName)} + ' not found');
+          }
+          
+          workspace.activeScheme = targetScheme;
+          return 'Scheme set to ' + ${JSON.stringify(schemeName)};
+        })()
+      `;
+      
+      try {
+        await this.executeJXA(setSchemeScript);
+      } catch (error) {
+        return { content: [{ type: 'text', text: `Failed to set scheme '${schemeName}': ${error.message}` }] };
+      }
     }
 
     // Set destination if provided
@@ -853,27 +698,28 @@ class XcodeMCPServer {
       }
     }
 
-
-    // Trigger build using JXA - just start the build
+    // Start the build - just trigger it, don't wait in JXA
     const buildScript = `
       (function() {
         const app = Application('Xcode');
-        const docs = app.workspaceDocuments();
-        if (docs.length === 0) throw new Error('No workspace document open');
-        
-        const workspace = docs[0];
+        const workspace = app.activeWorkspaceDocument();
+        if (!workspace) throw new Error('No active workspace');
         
         // Start the build
         workspace.build();
         
-        return 'Build started for scheme ${schemeName}';
+        return 'Build started';
       })()
     `;
     
     // Record the time when we started the build
     const buildStartTime = Date.now();
     
-    await this.executeJXA(buildScript);
+    try {
+      await this.executeJXA(buildScript);
+    } catch (error) {
+      return { content: [{ type: 'text', text: `Failed to start build: ${error.message}` }] };
+    }
 
     // Wait for a NEW build log that was created AFTER we started the build
     console.error(`Waiting for new build log to appear after build start...`);
@@ -905,7 +751,7 @@ class XcodeMCPServer {
     }
 
     if (!newLog) {
-      return { content: [{ type: 'text', text: `Build started for scheme '${schemeName}' but no new build log appeared within ${initialWaitAttempts} seconds` }] };
+      return { content: [{ type: 'text', text: `Build started but no new build log appeared within ${initialWaitAttempts} seconds` }] };
     }
 
     // Now wait for this specific build to complete
@@ -924,11 +770,19 @@ class XcodeMCPServer {
         // Check if log file has stopped growing
         if (currentLogSize === lastLogSize) {
           stableCount++;
-          // Wait for log to be stable for 5 seconds and parseable
-          if (stableCount >= 5) {
-            const canParse = await this.canParseLog(newLog.path);
-            if (canParse) {
-              console.error(`Build completed, log is ready: ${newLog.path}`);
+          // Wait for log to be stable for just 1 second, then try parsing
+          if (stableCount >= 1) {
+            console.error(`Log stable for ${stableCount}s, trying to parse...`);
+            // Try to parse directly - if it works, build is done
+            const results = await this.parseBuildLog(newLog.path);
+            console.error(`Parse result has ${results.errors.length} errors, ${results.warnings.length} warnings`);
+            // Check if parsing actually succeeded (not a parsing failure error)
+            const isParseFailure = results.errors.some(error => 
+              typeof error === 'string' && error.includes('XCLogParser failed to parse the build log.')
+            );
+            if (results && !isParseFailure) {
+              console.error(`Build completed, log parsed successfully: ${newLog.path}`);
+              // Parse succeeded, we're done - break out of the loop
               break;
             }
           }
@@ -953,22 +807,20 @@ class XcodeMCPServer {
       attempts++;
     }
 
-    if (!newLog) {
-      return { content: [{ type: 'text', text: `Build started for scheme '${schemeName}' but no build log found after ${maxAttempts} seconds` }] };
+    // If we get here, we either completed successfully or timed out
+    if (attempts >= maxAttempts) {
+      return { content: [{ type: 'text', text: `Build timed out after ${maxAttempts} seconds` }] };
     }
     
-    if (attempts >= maxAttempts) {
-      return { content: [{ type: 'text', text: `Build for scheme '${schemeName}' timed out after ${maxAttempts} seconds` }] };
-    }
-
-    // Parse build results
+    // Parse the final results
     const results = await this.parseBuildLog(newLog.path);
     
     let message = '';
-    const schemeInfo = destination ? `scheme '${schemeName}' for destination '${destination}'` : `scheme '${schemeName}'`;
+    const schemeInfo = schemeName ? ` for scheme '${schemeName}'` : '';
+    const destInfo = destination ? ` and destination '${destination}'` : '';
     
     if (results.errors.length > 0) {
-      message = `❌ BUILD FAILED for ${schemeInfo} (${results.errors.length} errors)\n\nERRORS:\n`;
+      message = `❌ BUILD FAILED${schemeInfo}${destInfo} (${results.errors.length} errors)\n\nERRORS:\n`;
       results.errors.forEach(error => {
         message += `  • ${error}\n`;
       });
@@ -978,12 +830,12 @@ class XcodeMCPServer {
         message
       );
     } else if (results.warnings.length > 0) {
-      message = `⚠️ BUILD COMPLETED WITH WARNINGS for ${schemeInfo} (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
+      message = `⚠️ BUILD COMPLETED WITH WARNINGS${schemeInfo}${destInfo} (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
       results.warnings.forEach(warning => {
         message += `  • ${warning}\n`;
       });
     } else {
-      message = `✅ BUILD SUCCESSFUL for ${schemeInfo}`;
+      message = `✅ BUILD SUCCESSFUL${schemeInfo}${destInfo}`;
     }
 
     return { content: [{ type: 'text', text: message }] };
@@ -1177,7 +1029,7 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async getSchemes() {
+  async getSchemes(projectPath) {
     const script = `
       (function() {
         const app = Application('Xcode');
@@ -1201,7 +1053,7 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async getRunDestinations() {
+  async getRunDestinations(projectPath) {
     const script = `
       (function() {
         const app = Application('Xcode');
@@ -1226,7 +1078,7 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async setActiveScheme(schemeName) {
+  async setActiveScheme(projectPath, schemeName) {
     const script = `
       (function() {
         const app = Application('Xcode');
@@ -1249,7 +1101,7 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async getWorkspaceInfo() {
+  async getWorkspaceInfo(projectPath) {
     const script = `
       (function() {
         const app = Application('Xcode');
@@ -1272,7 +1124,7 @@ class XcodeMCPServer {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  async getProjects() {
+  async getProjects(projectPath) {
     const script = `
       (function() {
         const app = Application('Xcode');
