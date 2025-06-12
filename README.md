@@ -32,7 +32,7 @@ MCP server for Xcode build automation and log parsing.
 Run directly with npx:
 ```bash
 brew install xclogparser
-npx xcodemcp@latest
+npx -y xcodemcp@latest
 ```
 
 Or install globally:
@@ -49,7 +49,7 @@ Add to your MCP configuration:
   "mcpServers": {
     "xcodemcp": {
       "command": "npx",
-      "args": ["xcodemcp@latest"],
+      "args": ["-y", "xcodemcp@latest"],
       "env": {}
     }
   }
@@ -62,7 +62,7 @@ To add XcodeMCP to Claude Code using the command line:
 ```bash
 claude mcp add-json XcodeMCP '{
   "command": "npx",
-  "args": ["xcodemcp@latest"],
+  "args": ["-y", "xcodemcp@latest"],
   "env": {}
 }'
 ```
