@@ -87,7 +87,7 @@ export class BuildTools {
     
     let attempts = 0;
     let newLog = null;
-    const initialWaitAttempts = 180;
+    const initialWaitAttempts = 1800;
 
     while (attempts < initialWaitAttempts) {
       const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
