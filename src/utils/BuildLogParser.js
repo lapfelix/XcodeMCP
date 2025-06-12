@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { readdir, stat } from 'fs/promises';
+import { readdir, stat, readFile } from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
@@ -24,19 +24,32 @@ export class BuildLogParser {
       
       if (matches.length === 0) return null;
       
-      let latestDir = null;
-      let latestTime = 0;
-      
+      // Find the correct DerivedData folder by verifying WorkspacePath in info.plist
       for (const match of matches) {
         const fullPath = path.join(derivedDataPath, match);
-        const stats = await stat(fullPath);
-        if (stats.mtime.getTime() > latestTime) {
-          latestTime = stats.mtime.getTime();
-          latestDir = fullPath;
+        const infoPlistPath = path.join(fullPath, 'info.plist');
+        
+        try {
+          const plistContent = await readFile(infoPlistPath, 'utf8');
+          const workspacePathMatch = plistContent.match(/<key>WorkspacePath<\/key>\s*<string>(.*?)<\/string>/);
+          
+          if (workspacePathMatch) {
+            const workspacePath = workspacePathMatch[1];
+            // Resolve both paths to absolute paths for comparison
+            const resolvedProjectPath = path.resolve(projectPath);
+            const resolvedWorkspacePath = path.resolve(workspacePath);
+            
+            if (resolvedProjectPath === resolvedWorkspacePath) {
+              return fullPath;
+            }
+          }
+        } catch (plistError) {
+          // Continue to next match if info.plist can't be read
+          continue;
         }
       }
       
-      return latestDir;
+      return null;
     } catch (error) {
       return null;
     }
