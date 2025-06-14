@@ -10,16 +10,19 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:watch": "jest --watch"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "jest": "^29.0.0",
-    "jest-environment-node": "^29.0.0"
+    "@vitest/coverage-v8": "^3.2.3",
+    "@vitest/ui": "^3.2.3",
+    "vitest": "^3.2.3"
   },
   "engines": {
     "node": ">=18"

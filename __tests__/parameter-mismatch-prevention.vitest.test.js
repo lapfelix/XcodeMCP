@@ -3,6 +3,7 @@
  * Focus on catching "not defined" variable errors in function signatures
  */
 
+import { describe, test, expect, beforeEach } from 'vitest';
 import { XcodeMCPServer } from '../index.js';
 
 describe('Parameter Mismatch Prevention', () => {
@@ -33,9 +34,7 @@ describe('Parameter Mismatch Prevention', () => {
 
       Object.entries(expectedCounts).forEach(([functionName, expectedCount]) => {
         const actualCount = server[functionName].length;
-        expect(actualCount).toBe(expectedCount, 
-          `${functionName} has ${actualCount} parameters, expected ${expectedCount}. ` +
-          `This mismatch could cause "not defined" errors like the actualProjectPath bug.`);
+        expect(actualCount).toBe(expectedCount);
       });
     });
   });
@@ -89,9 +88,7 @@ describe('Parameter Mismatch Prevention', () => {
         const requiredArgCount = method.length;
         const providedArgCount = mapping.args.length;
         
-        expect(providedArgCount).toBeGreaterThanOrEqual(requiredArgCount,
-          `${mapping.tool} calls ${mapping.method} with ${providedArgCount} args but needs ${requiredArgCount}. ` +
-          `This could cause parameter mismatch errors.`);
+        expect(providedArgCount).toBeGreaterThanOrEqual(requiredArgCount);
       });
     });
   });
