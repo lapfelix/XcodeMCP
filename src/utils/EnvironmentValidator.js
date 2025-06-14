@@ -1,0 +1,442 @@
+import { spawn } from 'child_process';
+import { existsSync, accessSync, constants } from 'fs';
+import { platform } from 'os';
+import path from 'path';
+
+export class EnvironmentValidator {
+  static validationResults = {
+    os: { valid: false, message: '', recoveryInstructions: [] },
+    xcode: { valid: false, message: '', recoveryInstructions: [] },
+    xclogparser: { valid: false, message: '', recoveryInstructions: [] },
+    osascript: { valid: false, message: '', recoveryInstructions: [] },
+    permissions: { valid: false, message: '', recoveryInstructions: [] },
+    overall: { valid: false, canOperateInDegradedMode: false }
+  };
+
+  /**
+   * Validates the entire environment and returns detailed results
+   * @returns {Promise<Object>} Validation results object
+   */
+  static async validateEnvironment() {
+    const results = {
+      os: await this.validateOS(),
+      xcode: await this.validateXcode(),
+      xclogparser: await this.validateXCLogParser(),
+      osascript: await this.validateOSAScript(),
+      permissions: await this.validatePermissions()
+    };
+
+    // Determine overall validity and degraded mode capability
+    const criticalFailures = ['os', 'osascript'].filter(key => !results[key]?.valid);
+    const nonCriticalFailures = ['xcode', 'xclogparser', 'permissions'].filter(key => !results[key]?.valid);
+
+    results.overall = {
+      valid: criticalFailures.length === 0 && nonCriticalFailures.length === 0,
+      canOperateInDegradedMode: criticalFailures.length === 0,
+      criticalFailures,
+      nonCriticalFailures
+    };
+
+    results.overall.summary = this.generateValidationSummary(results);
+
+    this.validationResults = results;
+    return results;
+  }
+
+  /**
+   * Validates macOS environment
+   */
+  static async validateOS() {
+    if (platform() !== 'darwin') {
+      return {
+        valid: false,
+        message: 'XcodeMCP requires macOS to operate',
+        recoveryInstructions: [
+          'This MCP server only works on macOS',
+          'Xcode and its automation features are macOS-exclusive',
+          'Consider using this server on a Mac or macOS virtual machine'
+        ]
+      };
+    }
+
+    return {
+      valid: true,
+      message: 'macOS environment detected',
+      recoveryInstructions: []
+    };
+  }
+
+  /**
+   * Validates Xcode installation
+   */
+  static async validateXcode() {
+    const possibleXcodePaths = [
+      '/Applications/Xcode.app',
+      '/Applications/Xcode-beta.app'
+    ];
+    
+    // Also check for versioned Xcode installations
+    try {
+      const { readdirSync } = await import('fs');
+      const appDir = readdirSync('/Applications');
+      const versionedXcodes = appDir
+        .filter(name => name.startsWith('Xcode-') && name.endsWith('.app'))
+        .map(name => `/Applications/${name}`);
+      possibleXcodePaths.push(...versionedXcodes);
+    } catch (error) {
+      // Ignore errors when scanning for versioned Xcodes
+    }
+
+    let xcodeFound = false;
+    let xcodePath = null;
+
+    for (const path of possibleXcodePaths) {
+      if (existsSync(path)) {
+        xcodeFound = true;
+        xcodePath = path;
+        break;
+      }
+    }
+
+    if (!xcodeFound) {
+      return {
+        valid: false,
+        message: 'Xcode not found in /Applications',
+        recoveryInstructions: [
+          'Download and install Xcode from the Mac App Store',
+          'Ensure Xcode is installed in /Applications/Xcode.app',
+          'Launch Xcode once to complete installation and accept license',
+          'If using Xcode beta, ensure it is in /Applications/Xcode-beta.app'
+        ]
+      };
+    }
+
+    // Check if Xcode can be launched and get version
+    try {
+      const version = await this.getXcodeVersion(xcodePath);
+      
+      return {
+        valid: true,
+        message: `Xcode found at ${xcodePath} (version ${version})`,
+        recoveryInstructions: [],
+        metadata: { path: xcodePath, version }
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        message: `Xcode found but appears to be corrupted or not properly installed: ${error.message}`,
+        recoveryInstructions: [
+          'Try launching Xcode manually to complete setup',
+          'Accept the license agreement if prompted',
+          'Install additional components if requested',
+          'Restart Xcode if it hangs on first launch',
+          'Consider reinstalling Xcode if problems persist'
+        ]
+      };
+    }
+  }
+
+  /**
+   * Validates XCLogParser installation
+   */
+  static async validateXCLogParser() {
+    try {
+      const version = await this.executeCommand('xclogparser', ['--version']);
+      return {
+        valid: true,
+        message: `XCLogParser found (${version.trim()})`,
+        recoveryInstructions: [],
+        metadata: { version: version.trim() }
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        message: 'XCLogParser not found or not executable',
+        recoveryInstructions: [
+          'Install XCLogParser using Homebrew: brew install xclogparser',
+          'Or download from GitHub: https://github.com/MobileNativeFoundation/XCLogParser',
+          'Ensure xclogparser is in your PATH',
+          'Note: Build log parsing will be unavailable without XCLogParser'
+        ],
+        degradedMode: {
+          available: true,
+          limitations: ['Build logs cannot be parsed', 'Error details from builds will be limited']
+        }
+      };
+    }
+  }
+
+  /**
+   * Validates osascript availability
+   */
+  static async validateOSAScript() {
+    try {
+      const version = await this.executeCommand('osascript', ['-l', 'JavaScript', '-e', '"test"']);
+      if (version.trim() === 'test') {
+        return {
+          valid: true,
+          message: 'JavaScript for Automation (JXA) is available',
+          recoveryInstructions: []
+        };
+      } else {
+        throw new Error('Unexpected output from osascript');
+      }
+    } catch (error) {
+      return {
+        valid: false,
+        message: 'JavaScript for Automation (JXA) not available',
+        recoveryInstructions: [
+          'Ensure you are running on macOS (osascript is a macOS system tool)',
+          'Check if JavaScript for Automation is enabled in System Preferences',
+          'Try running "osascript -l JavaScript -e \\"return \'test\'\\"" manually',
+          'This is a critical component - the server cannot function without it'
+        ]
+      };
+    }
+  }
+
+  /**
+   * Validates automation permissions
+   */
+  static async validatePermissions() {
+    try {
+      // Try a simple Xcode automation command to test permissions
+      const result = await this.executeCommand('osascript', [
+        '-l', 'JavaScript', '-e',
+        'Application("Xcode").version()'
+      ]);
+      
+      if (result && result.trim()) {
+        return {
+          valid: true,
+          message: 'Xcode automation permissions are working',
+          recoveryInstructions: []
+        };
+      } else {
+        throw new Error('No version returned from Xcode');
+      }
+    } catch (error) {
+      const errorMessage = error.message.toLowerCase();
+      
+      if (errorMessage.includes('not allowed assistive access') || 
+          errorMessage.includes('not authorized') ||
+          errorMessage.includes('permission')) {
+        return {
+          valid: false,
+          message: 'Automation permissions not granted',
+          recoveryInstructions: [
+            'Open System Preferences → Privacy & Security → Automation',
+            'Find your terminal application (Terminal, iTerm, VS Code, etc.)',
+            'Enable permission to control "Xcode"',
+            'You may need to restart your terminal after granting permission',
+            'If using VS Code, look for "Code" in the automation list'
+          ]
+        };
+      } else if (errorMessage.includes("application isn't running")) {
+        return {
+          valid: false,
+          message: 'Cannot test permissions - Xcode not running',
+          recoveryInstructions: [
+            'Launch Xcode to test automation permissions',
+            'Permissions will be validated when Xcode operations are attempted',
+            'This is not critical for server startup'
+          ],
+          degradedMode: {
+            available: true,
+            limitations: ['Permission validation deferred until Xcode operations']
+          }
+        };
+      } else {
+        return {
+          valid: false,
+          message: `Permission check failed: ${error.message}`,
+          recoveryInstructions: [
+            'Ensure Xcode is properly installed',
+            'Try launching Xcode manually first',
+            'Check System Preferences → Privacy & Security → Automation',
+            'Grant permission for your terminal to control Xcode'
+          ]
+        };
+      }
+    }
+  }
+
+  /**
+   * Gets Xcode version
+   */
+  static async getXcodeVersion(xcodePath) {
+    const infoPlistPath = path.join(xcodePath, 'Contents/Info.plist');
+    
+    if (!existsSync(infoPlistPath)) {
+      throw new Error('Info.plist not found');
+    }
+
+    try {
+      const result = await this.executeCommand('defaults', [
+        'read', infoPlistPath, 'CFBundleShortVersionString'
+      ]);
+      return result.trim();
+    } catch (error) {
+      // Fallback to plutil if defaults doesn't work
+      try {
+        const result = await this.executeCommand('plutil', [
+          '-extract', 'CFBundleShortVersionString', 'raw', infoPlistPath
+        ]);
+        return result.trim();
+      } catch (fallbackError) {
+        throw new Error(`Cannot read Xcode version: ${fallbackError.message}`);
+      }
+    }
+  }
+
+  /**
+   * Executes a command and returns stdout
+   */
+  static async executeCommand(command, args = [], timeout = 5000) {
+    return new Promise((resolve, reject) => {
+      const process = spawn(command, args);
+      let stdout = '';
+      let stderr = '';
+
+      const timer = setTimeout(() => {
+        process.kill();
+        reject(new Error(`Command timed out: ${command} ${args.join(' ')}`));
+      }, timeout);
+
+      process.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      process.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) {
+          resolve(stdout);
+        } else {
+          reject(new Error(`Command failed with exit code ${code}: ${stderr || 'No error details'}`));
+        }
+      });
+
+      process.on('error', (error) => {
+        clearTimeout(timer);
+        reject(new Error(`Failed to start command: ${error.message}`));
+      });
+    });
+  }
+
+  /**
+   * Generates a human-readable validation summary
+   */
+  static generateValidationSummary(results) {
+    const summary = ['XcodeMCP Environment Validation Report', ''];
+    
+    // Overall status
+    if (results.overall.valid) {
+      summary.push('✅ All systems operational');
+    } else if (results.overall.canOperateInDegradedMode) {
+      summary.push('⚠️  Can operate with limitations');
+    } else {
+      summary.push('❌ Critical failures detected - server cannot operate');
+    }
+    
+    summary.push('');
+
+    // Component status
+    Object.entries(results).forEach(([component, result]) => {
+      if (component === 'overall') return;
+      
+      const status = result.valid ? '✅' : '❌';
+      summary.push(`${status} ${component.toUpperCase()}: ${result.message}`);
+      
+      if (!result.valid && result.recoveryInstructions.length > 0) {
+        summary.push('   Recovery instructions:');
+        result.recoveryInstructions.forEach(instruction => {
+          summary.push(`   • ${instruction}`);
+        });
+        summary.push('');
+      }
+    });
+
+    return summary.join('\n');
+  }
+
+  /**
+   * Checks if the environment can operate in degraded mode
+   */
+  static canOperateInDegradedMode(results = null) {
+    const validationResults = results || this.validationResults;
+    return validationResults.overall?.canOperateInDegradedMode ?? false;
+  }
+
+  /**
+   * Gets the list of features unavailable in current environment
+   */
+  static getUnavailableFeatures(results = null) {
+    const validationResults = results || this.validationResults;
+    const unavailable = [];
+
+    if (!validationResults.xclogparser?.valid) {
+      unavailable.push('Build log parsing and detailed error reporting');
+    }
+
+    if (!validationResults.xcode?.valid) {
+      unavailable.push('All Xcode operations (build, test, run, debug)');
+    }
+
+    if (!validationResults.permissions?.valid) {
+      unavailable.push('Xcode automation (may work after granting permissions)');
+    }
+
+    return unavailable;
+  }
+
+  /**
+   * Creates a configuration health check report
+   */
+  static async createHealthCheckReport() {
+    const results = await this.validateEnvironment();
+    const report = [
+      'XcodeMCP Configuration Health Check',
+      '=' .repeat(40),
+      '',
+      results.overall.summary,
+      ''
+    ];
+
+    if (!results.overall.valid) {
+      report.push('IMMEDIATE ACTIONS REQUIRED:');
+      
+      results.overall.criticalFailures.forEach(component => {
+        const result = results[component];
+        report.push(`\n${component.toUpperCase()} FAILURE:`);
+        result.recoveryInstructions.forEach(instruction => {
+          report.push(`• ${instruction}`);
+        });
+      });
+
+      if (results.overall.nonCriticalFailures.length > 0) {
+        report.push('\nOPTIONAL IMPROVEMENTS:');
+        results.overall.nonCriticalFailures.forEach(component => {
+          const result = results[component];
+          report.push(`\n${component.toUpperCase()}:`);
+          result.recoveryInstructions.forEach(instruction => {
+            report.push(`• ${instruction}`);
+          });
+        });
+      }
+    }
+
+    const unavailableFeatures = this.getUnavailableFeatures(results);
+    if (unavailableFeatures.length > 0) {
+      report.push('\nLIMITED FUNCTIONALITY:');
+      unavailableFeatures.forEach(feature => {
+        report.push(`• ${feature}`);
+      });
+    }
+
+    return report.join('\n');
+  }
+}
