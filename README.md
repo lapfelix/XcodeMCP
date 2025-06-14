@@ -78,19 +78,18 @@ node index.js
 ## Available Tools
 
 - `xcode_open_project` - Open Xcode projects and workspaces
-- `xcode_build` - Build and get errors/warnings  
-- `xcode_build_scheme` - Build with specific scheme and destination
+- `xcode_build` - Build with optional scheme and destination, returns errors/warnings
 - `xcode_clean` - Clean build artifacts
-- `xcode_test` - Run unit and UI tests
-- `xcode_run` - Run the active scheme
-- `xcode_debug` - Start debugging session
+- `xcode_test` - Run unit and UI tests with optional command line arguments
+- `xcode_run` - Run the active scheme with optional command line arguments
+- `xcode_debug` - Start debugging session with optional scheme
 - `xcode_stop` - Stop current build/run/test operation
-- `xcode_get_schemes` - List all available schemes
-- `xcode_get_run_destinations` - List simulators and devices
+- `xcode_get_schemes` - List all available schemes with active status
 - `xcode_set_active_scheme` - Switch between schemes
-- `xcode_get_workspace_info` - Get workspace details and status
+- `xcode_get_run_destinations` - List simulators and devices with platform info
+- `xcode_get_workspace_info` - Get workspace details and current status
 - `xcode_get_projects` - List projects in workspace
-- `xcode_open_file` - Open specific files in Xcode
+- `xcode_open_file` - Open specific files in Xcode with optional line number
 
 ## Example
 

@@ -174,12 +174,34 @@ export class BuildLogParser {
           
           const errors = (result.errors || []).map(error => {
             const fileName = error.documentURL ? error.documentURL.replace('file://', '') : 'Unknown file';
-            return `${fileName}: ${error.title}`;
+            const line = error.startingLineNumber;
+            const column = error.startingColumnNumber;
+            
+            let location = fileName;
+            if (line && line > 0) {
+              location += `:${line}`;
+              if (column && column > 0) {
+                location += `:${column}`;
+              }
+            }
+            
+            return `${location}: ${error.title}`;
           });
           
           const warnings = (result.warnings || []).map(warning => {
             const fileName = warning.documentURL ? warning.documentURL.replace('file://', '') : 'Unknown file';
-            return `${fileName}: ${warning.title}`;
+            const line = warning.startingLineNumber;
+            const column = warning.startingColumnNumber;
+            
+            let location = fileName;
+            if (line && line > 0) {
+              location += `:${line}`;
+              if (column && column > 0) {
+                location += `:${column}`;
+              }
+            }
+            
+            return `${location}: ${warning.title}`;
           });
           
           resolve({
