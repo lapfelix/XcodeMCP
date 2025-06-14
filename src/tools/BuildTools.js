@@ -5,6 +5,7 @@ import { BuildLogParser } from '../utils/BuildLogParser.js';
 import { PathValidator } from '../utils/PathValidator.js';
 import { ErrorHelper } from '../utils/ErrorHelper.js';
 import { ParameterNormalizer } from '../utils/ParameterNormalizer.js';
+import { Logger } from '../utils/Logger.js';
 
 export class BuildTools {
   static async build(projectPath, schemeName = null, destination = null, openProject) {
@@ -187,7 +188,7 @@ export class BuildTools {
       return { content: [{ type: 'text', text: `Failed to start build: ${error.message}` }] };
     }
 
-    console.error(`Waiting for new build log to appear after build start...`);
+    Logger.info('Waiting for new build log to appear after build start...');
     
     let attempts = 0;
     let newLog = null;
@@ -199,15 +200,15 @@ export class BuildTools {
       if (currentLog) {
         const logTime = currentLog.mtime.getTime();
         const buildTime = buildStartTime;
-        console.error(`Checking log: ${currentLog.path}, log time: ${logTime}, build time: ${buildTime}, diff: ${logTime - buildTime}ms`);
+        Logger.debug(`Checking log: ${currentLog.path}, log time: ${logTime}, build time: ${buildTime}, diff: ${logTime - buildTime}ms`);
         
         if (logTime > buildTime) {
           newLog = currentLog;
-          console.error(`Found new build log created after build start: ${newLog.path}`);
+          Logger.info(`Found new build log created after build start: ${newLog.path}`);
           break;
         }
       } else {
-        console.error(`No build log found yet, attempt ${attempts + 1}/${initialWaitAttempts}`);
+        Logger.debug(`No build log found yet, attempt ${attempts + 1}/${initialWaitAttempts}`);
       }
       
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -218,7 +219,7 @@ export class BuildTools {
       return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Build started but no new build log appeared within ${initialWaitAttempts} seconds`, ErrorHelper.getBuildLogNotFoundGuidance()) }] };
     }
 
-    console.error(`Monitoring build completion for log: ${newLog.path}`);
+    Logger.info(`Monitoring build completion for log: ${newLog.path}`);
     
     attempts = 0;
     const maxAttempts = 1200;
@@ -233,14 +234,14 @@ export class BuildTools {
         if (currentLogSize === lastLogSize) {
           stableCount++;
           if (stableCount >= 1) {
-            console.error(`Log stable for ${stableCount}s, trying to parse...`);
+            Logger.debug(`Log stable for ${stableCount}s, trying to parse...`);
             const results = await BuildLogParser.parseBuildLog(newLog.path);
-            console.error(`Parse result has ${results.errors.length} errors, ${results.warnings.length} warnings`);
+            Logger.debug(`Parse result has ${results.errors.length} errors, ${results.warnings.length} warnings`);
             const isParseFailure = results.errors.some(error => 
               typeof error === 'string' && error.includes('XCLogParser failed to parse the build log.')
             );
             if (results && !isParseFailure) {
-              console.error(`Build completed, log parsed successfully: ${newLog.path}`);
+              Logger.info(`Build completed, log parsed successfully: ${newLog.path}`);
               break;
             }
           }
@@ -251,7 +252,7 @@ export class BuildTools {
       } catch (error) {
         const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
         if (currentLog && currentLog.path !== newLog.path && currentLog.mtime.getTime() > buildStartTime) {
-          console.error(`Build log changed to: ${currentLog.path}`);
+          Logger.debug(`Build log changed to: ${currentLog.path}`);
           newLog = currentLog;
           lastLogSize = 0;
           stableCount = 0;
@@ -272,10 +273,13 @@ export class BuildTools {
     const schemeInfo = schemeName ? ` for scheme '${schemeName}'` : '';
     const destInfo = destination ? ` and destination '${destination}'` : '';
     
+    Logger.info(`Build completed${schemeInfo}${destInfo} - ${results.errors.length} errors, ${results.warnings.length} warnings`);
+    
     if (results.errors.length > 0) {
       message = `❌ BUILD FAILED${schemeInfo}${destInfo} (${results.errors.length} errors)\n\nERRORS:\n`;
       results.errors.forEach(error => {
         message += `  • ${error}\n`;
+        Logger.error('Build error:', error);
       });
       throw new McpError(
         ErrorCode.InternalError,
@@ -285,6 +289,7 @@ export class BuildTools {
       message = `⚠️ BUILD COMPLETED WITH WARNINGS${schemeInfo}${destInfo} (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
       results.warnings.forEach(warning => {
         message += `  • ${warning}\n`;
+        Logger.warn('Build warning:', warning);
       });
     } else {
       message = `✅ BUILD SUCCESSFUL${schemeInfo}${destInfo}`;
@@ -420,10 +425,13 @@ export class BuildTools {
     const results = await BuildLogParser.parseBuildLog(newLog.path);
     
     let message = `${runResult}\n\n`;
+    Logger.info(`Run build completed - ${results.errors.length} errors, ${results.warnings.length} warnings`);
+    
     if (results.errors.length > 0) {
       message += `❌ BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
       results.errors.forEach(error => {
         message += `  • ${error}\n`;
+        Logger.error('Run build error:', error);
       });
       throw new McpError(
         ErrorCode.InternalError,
@@ -433,6 +441,7 @@ export class BuildTools {
       message += `⚠️ BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
       results.warnings.forEach(warning => {
         message += `  • ${warning}\n`;
+        Logger.warn('Run build warning:', warning);
       });
     } else {
       message += '✅ BUILD SUCCESSFUL - App should be launching';

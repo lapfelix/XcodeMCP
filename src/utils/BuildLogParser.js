@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { readdir, stat, readFile } from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { Logger } from './Logger.js';
 
 export class BuildLogParser {
   static async findProjectDerivedData(projectPath) {
@@ -140,8 +141,8 @@ export class BuildLogParser {
               errorMessage.includes('Failed to parse')) {
             
             if (retryCount < maxRetries) {
-              console.error(`XCLogParser failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${errorMessage}`);
-              console.error(`Retrying in ${delays[retryCount]}ms...`);
+              Logger.warn(`XCLogParser failed (attempt ${retryCount + 1}/${maxRetries + 1}): ${errorMessage}`);
+              Logger.debug(`Retrying in ${delays[retryCount]}ms...`);
               
               setTimeout(async () => {
                 const result = await this.parseBuildLog(logPath, retryCount + 1, maxRetries);
@@ -150,7 +151,7 @@ export class BuildLogParser {
               return;
             }
             
-            console.error('xclogparser failed:', stderr);
+            Logger.error('xclogparser failed:', stderr);
             resolve({
               errors: [
                 'XCLogParser failed to parse the build log.',
@@ -210,7 +211,7 @@ export class BuildLogParser {
             notes: []
           });
         } catch (parseError) {
-          console.error('Failed to parse xclogparser output:', parseError);
+          Logger.error('Failed to parse xclogparser output:', parseError);
           resolve({
             errors: [
               'Failed to parse XCLogParser JSON output.',
@@ -229,7 +230,7 @@ export class BuildLogParser {
       });
       
       command.on('error', (err) => {
-        console.error('Failed to run xclogparser:', err);
+        Logger.error('Failed to run xclogparser:', err);
         resolve({
           errors: [
             'XCLogParser is required to parse Xcode build logs but is not installed.',

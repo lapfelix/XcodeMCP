@@ -10,6 +10,7 @@ import { ProjectTools } from './tools/ProjectTools.js';
 import { InfoTools } from './tools/InfoTools.js';
 import { PathValidator } from './utils/PathValidator.js';
 import { EnvironmentValidator } from './utils/EnvironmentValidator.js';
+import { Logger } from './utils/Logger.js';
 
 export class XcodeServer {
   constructor() {
@@ -45,23 +46,23 @@ export class XcodeServer {
       this.isValidated = true;
       this.canOperateInDegradedMode = this.environmentValidation.overall.canOperateInDegradedMode;
 
-      // Log validation results to stderr for debugging (won't interfere with MCP protocol)
-      console.error('XcodeMCP Environment Validation:', 
-        this.environmentValidation.overall.valid ? 'PASSED' : 
-        this.canOperateInDegradedMode ? 'DEGRADED' : 'FAILED');
+      // Log validation results
+      const validationStatus = this.environmentValidation.overall.valid ? 'PASSED' : 
+        this.canOperateInDegradedMode ? 'DEGRADED' : 'FAILED';
+      Logger.info('Environment Validation:', validationStatus);
 
       if (!this.environmentValidation.overall.valid) {
-        console.error('Environment issues detected:');
+        Logger.warn('Environment issues detected:');
         [...this.environmentValidation.overall.criticalFailures, 
          ...this.environmentValidation.overall.nonCriticalFailures].forEach(component => {
           const result = this.environmentValidation[component];
-          console.error(`  ${component}: ${result.message}`);
+          Logger.warn(`  ${component}: ${result.message}`);
         });
       }
 
       return this.environmentValidation;
     } catch (error) {
-      console.error('Environment validation failed:', error.message);
+      Logger.error('Environment validation failed:', error.message);
       // Create minimal validation result for graceful degradation
       this.environmentValidation = {
         overall: { 
@@ -119,7 +120,7 @@ export class XcodeServer {
 
     // Issue warning for degraded functionality but allow operation
     if (limitations.degraded) {
-      console.error(`Warning: ${toolName} operating in degraded mode - ${limitations.reason}`);
+      Logger.warn(`${toolName} operating in degraded mode - ${limitations.reason}`);
     }
 
     return null; // Operation can proceed
@@ -507,7 +508,7 @@ export class XcodeServer {
         }
       } catch (error) {
         // Enhanced error handling that doesn't crash the server
-        console.error(`XcodeMCP tool execution error for ${name}:`, error);
+        Logger.error(`Tool execution error for ${name}:`, error);
         
         // Check if it's a configuration-related error that we can provide guidance for
         const enhancedError = await this.enhanceErrorWithGuidance(error, name);

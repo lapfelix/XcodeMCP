@@ -52,7 +52,9 @@ Add to your MCP configuration:
     "xcodemcp": {
       "command": "npx",
       "args": ["-y", "xcodemcp@latest"],
-      "env": {}
+      "env": {
+        "LOG_LEVEL": "INFO"
+      }
     }
   }
 }
@@ -65,7 +67,9 @@ To add XcodeMCP to Claude Code using the command line:
 claude mcp add-json XcodeMCP '{
   "command": "npx",
   "args": ["-y", "xcodemcp@latest"],
-  "env": {}
+  "env": {
+    "LOG_LEVEL": "INFO"
+  }
 }'
 ```
 
@@ -92,6 +96,82 @@ node index.js
 - `xcode_get_workspace_info` - Get workspace details and current status
 - `xcode_get_projects` - List projects in workspace
 - `xcode_open_file` - Open specific files in Xcode with optional line number
+- `xcode_health_check` - Comprehensive environment validation and configuration diagnostics
+
+## Configuration
+
+### Logging Configuration
+
+XcodeMCP supports configurable logging to help with debugging and monitoring:
+
+#### Environment Variables
+
+- **`LOG_LEVEL`**: Controls logging verbosity (default: `INFO`)
+  - `SILENT`: No logging output
+  - `ERROR`: Only error messages
+  - `WARN`: Warnings and errors
+  - `INFO`: General operational information (recommended)
+  - `DEBUG`: Detailed diagnostic information
+
+- **`XCODEMCP_LOG_FILE`**: Optional file path for logging
+  - Logs are written to the specified file in addition to stderr
+  - Parent directories are created automatically
+  - Example: `/tmp/xcodemcp.log` or `~/Library/Logs/xcodemcp.log`
+
+- **`XCODEMCP_CONSOLE_LOGGING`**: Enable/disable console output (default: `true`)
+  - Set to `false` to disable stderr logging (useful when using file logging only)
+
+#### Examples
+
+**Debug logging with file output:**
+```json
+{
+  "mcpServers": {
+    "xcodemcp": {
+      "command": "npx",
+      "args": ["-y", "xcodemcp@latest"],
+      "env": {
+        "LOG_LEVEL": "DEBUG",
+        "XCODEMCP_LOG_FILE": "~/Library/Logs/xcodemcp.log"
+      }
+    }
+  }
+}
+```
+
+**Silent mode (no logging):**
+```json
+{
+  "mcpServers": {
+    "xcodemcp": {
+      "command": "npx", 
+      "args": ["-y", "xcodemcp@latest"],
+      "env": {
+        "LOG_LEVEL": "SILENT"
+      }
+    }
+  }
+}
+```
+
+**File-only logging:**
+```json
+{
+  "mcpServers": {
+    "xcodemcp": {
+      "command": "npx",
+      "args": ["-y", "xcodemcp@latest"], 
+      "env": {
+        "LOG_LEVEL": "INFO",
+        "XCODEMCP_LOG_FILE": "/tmp/xcodemcp.log",
+        "XCODEMCP_CONSOLE_LOGGING": "false"
+      }
+    }
+  }
+}
+```
+
+All logs are properly formatted with timestamps and log levels, and stderr output maintains compatibility with the MCP protocol.
 
 ## Example
 
