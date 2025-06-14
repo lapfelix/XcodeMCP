@@ -8,10 +8,12 @@ MCP server for Xcode build automation and log parsing.
 ## What it does
 
 - Opens Xcode projects and triggers builds _in Xcode, not using xcodebuild. [^1]_
-- Parses build logs to extract errors and warnings using [XCLogParser](https://github.com/MobileNativeFoundation/XCLogParser)
+- Parses build logs to extract errors and warnings with precise line:column numbers using [XCLogParser](https://github.com/MobileNativeFoundation/XCLogParser)
 - Provides MCP tools for AI assistants to interact with Xcode
 
 [^1]: For an alternative that uses `xcodebuild`, see [XcodeBuildMCP](https://github.com/cameroncooke/XcodeBuildMCP)
+
+> **⚠️ Warning**: This tool directly controls Xcode through JavaScript for Automation (JXA). It may interfere with your active Xcode session and trigger builds that could overwrite unsaved work. Use with caution in active development environments.
 
 ## Requirements
 
@@ -78,7 +80,7 @@ node index.js
 ## Available Tools
 
 - `xcode_open_project` - Open Xcode projects and workspaces
-- `xcode_build` - Build with optional scheme and destination, returns errors/warnings
+- `xcode_build` - Build with optional scheme and destination, returns errors/warnings with line:column numbers
 - `xcode_clean` - Clean build artifacts
 - `xcode_test` - Run unit and UI tests with optional command line arguments
 - `xcode_run` - Run the active scheme with optional command line arguments
@@ -101,5 +103,10 @@ Output:
 ```
 ❌ BUILD FAILED (1 errors)
 ERRORS:
-  • /path/file.swift: 'SomeType' file not found
+  • /path/file.swift:42:10: Expected expression
+
+⚠️ BUILD COMPLETED WITH WARNINGS (2 warnings)
+WARNINGS:  
+  • /path/file.swift:25: Variable 'unused' was never mutated; consider changing to 'let' constant
+  • /path/file.swift:30:5: Initialization of immutable value 'data' was never used
 ```
