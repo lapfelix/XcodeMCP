@@ -4,6 +4,7 @@ import { JXAExecutor } from '../utils/JXAExecutor.js';
 import { BuildLogParser } from '../utils/BuildLogParser.js';
 import { PathValidator } from '../utils/PathValidator.js';
 import { ErrorHelper } from '../utils/ErrorHelper.js';
+import { ParameterNormalizer } from '../utils/ParameterNormalizer.js';
 
 export class BuildTools {
   static async build(projectPath, schemeName = null, destination = null, openProject) {
@@ -13,6 +14,9 @@ export class BuildTools {
     await openProject(projectPath);
 
     if (schemeName) {
+      // Normalize the scheme name for better matching
+      const normalizedSchemeName = ParameterNormalizer.normalizeSchemeName(schemeName);
+      
       const setSchemeScript = `
         (function() {
           const app = Application('Xcode');
@@ -20,14 +24,22 @@ export class BuildTools {
           if (!workspace) throw new Error('No active workspace');
           
           const schemes = workspace.schemes();
-          const targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(schemeName)});
+          const schemeNames = schemes.map(scheme => scheme.name());
+          
+          // Try exact match first
+          let targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(normalizedSchemeName)});
+          
+          // If not found, try original name
+          if (!targetScheme) {
+            targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(schemeName)});
+          }
           
           if (!targetScheme) {
-            throw new Error('Scheme ' + ${JSON.stringify(schemeName)} + ' not found');
+            throw new Error('Scheme not found. Available: ' + JSON.stringify(schemeNames));
           }
           
           workspace.activeScheme = targetScheme;
-          return 'Scheme set to ' + ${JSON.stringify(schemeName)};
+          return 'Scheme set to ' + targetScheme.name();
         })()
       `;
       
@@ -41,8 +53,32 @@ export class BuildTools {
         
         if (error.message.includes('not found')) {
           try {
-            const availableSchemes = await this._getAvailableSchemes();
-            return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Scheme '${schemeName}' not found`, ErrorHelper.getSchemeNotFoundGuidance(schemeName, availableSchemes)) }] };
+            // Extract available schemes from error message if present
+            let availableSchemes = [];
+            if (error.message.includes('Available:')) {
+              const availablePart = error.message.split('Available: ')[1];
+              // Find the JSON array part
+              const jsonMatch = availablePart.match(/\[.*?\]/);
+              if (jsonMatch) {
+                try {
+                  availableSchemes = JSON.parse(jsonMatch[0]);
+                } catch {
+                  availableSchemes = await this._getAvailableSchemes();
+                }
+              }
+            } else {
+              availableSchemes = await this._getAvailableSchemes();
+            }
+              
+            // Try to find a close match with fuzzy matching
+            const bestMatch = ParameterNormalizer.findBestMatch(schemeName, availableSchemes);
+            let guidance = ErrorHelper.getSchemeNotFoundGuidance(schemeName, availableSchemes);
+            
+            if (bestMatch && bestMatch !== schemeName) {
+              guidance += `\n• Did you mean '${bestMatch}'?`;
+            }
+            
+            return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Scheme '${schemeName}' not found`, guidance) }] };
           } catch {
             return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Scheme '${schemeName}' not found`, ErrorHelper.getSchemeNotFoundGuidance(schemeName)) }] };
           }
@@ -53,6 +89,9 @@ export class BuildTools {
     }
 
     if (destination) {
+      // Normalize the destination name for better matching
+      const normalizedDestination = ParameterNormalizer.normalizeDestinationName(destination);
+      
       const setDestinationScript = `
         (function() {
           const app = Application('Xcode');
@@ -60,14 +99,22 @@ export class BuildTools {
           if (!workspace) throw new Error('No active workspace');
           
           const destinations = workspace.runDestinations();
-          const targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(destination)});
+          const destinationNames = destinations.map(dest => dest.name());
+          
+          // Try exact match first
+          let targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(normalizedDestination)});
+          
+          // If not found, try original name
+          if (!targetDestination) {
+            targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(destination)});
+          }
           
           if (!targetDestination) {
-            throw new Error('Destination ' + ${JSON.stringify(destination)} + ' not found');
+            throw new Error('Destination not found. Available: ' + JSON.stringify(destinationNames));
           }
           
           workspace.activeRunDestination = targetDestination;
-          return 'Destination set to ' + ${JSON.stringify(destination)};
+          return 'Destination set to ' + targetDestination.name();
         })()
       `;
       
@@ -81,8 +128,32 @@ export class BuildTools {
         
         if (error.message.includes('not found')) {
           try {
-            const availableDestinations = await this._getAvailableDestinations();
-            return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Destination '${destination}' not found`, ErrorHelper.getDestinationNotFoundGuidance(destination, availableDestinations)) }] };
+            // Extract available destinations from error message if present
+            let availableDestinations = [];
+            if (error.message.includes('Available:')) {
+              const availablePart = error.message.split('Available: ')[1];
+              // Find the JSON array part
+              const jsonMatch = availablePart.match(/\[.*?\]/);
+              if (jsonMatch) {
+                try {
+                  availableDestinations = JSON.parse(jsonMatch[0]);
+                } catch {
+                  availableDestinations = await this._getAvailableDestinations();
+                }
+              }
+            } else {
+              availableDestinations = await this._getAvailableDestinations();
+            }
+              
+            // Try to find a close match with fuzzy matching
+            const bestMatch = ParameterNormalizer.findBestMatch(destination, availableDestinations);
+            let guidance = ErrorHelper.getDestinationNotFoundGuidance(destination, availableDestinations);
+            
+            if (bestMatch && bestMatch !== destination) {
+              guidance += `\n• Did you mean '${bestMatch}'?`;
+            }
+            
+            return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Destination '${destination}' not found`, guidance) }] };
           } catch {
             return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Destination '${destination}' not found`, ErrorHelper.getDestinationNotFoundGuidance(destination)) }] };
           }

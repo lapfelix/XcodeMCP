@@ -1,5 +1,7 @@
 import { JXAExecutor } from '../utils/JXAExecutor.js';
 import { PathValidator } from '../utils/PathValidator.js';
+import { ParameterNormalizer } from '../utils/ParameterNormalizer.js';
+import { ErrorHelper } from '../utils/ErrorHelper.js';
 
 export class ProjectTools {
   static async openProject(projectPath) {
@@ -51,6 +53,9 @@ export class ProjectTools {
 
     await openProject(projectPath);
 
+    // Normalize the scheme name for better matching
+    const normalizedSchemeName = ParameterNormalizer.normalizeSchemeName(schemeName);
+
     const script = `
       (function() {
         const app = Application('Xcode');
@@ -58,19 +63,63 @@ export class ProjectTools {
         if (!workspace) throw new Error('No active workspace');
         
         const schemes = workspace.schemes();
-        const targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(schemeName)});
+        const schemeNames = schemes.map(scheme => scheme.name());
+        
+        // Try exact match first
+        let targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(normalizedSchemeName)});
+        
+        // If not found, try original name
+        if (!targetScheme) {
+          targetScheme = schemes.find(scheme => scheme.name() === ${JSON.stringify(schemeName)});
+        }
         
         if (!targetScheme) {
-          throw new Error('Scheme ' + ${JSON.stringify(schemeName)} + ' not found');
+          throw new Error('Scheme not found. Available: ' + JSON.stringify(schemeNames));
         }
         
         workspace.activeScheme = targetScheme;
-        return 'Active scheme set to: ' + ${JSON.stringify(schemeName)};
+        return 'Active scheme set to: ' + targetScheme.name();
       })()
     `;
     
-    const result = await JXAExecutor.execute(script);
-    return { content: [{ type: 'text', text: result }] };
+    try {
+      const result = await JXAExecutor.execute(script);
+      return { content: [{ type: 'text', text: result }] };
+    } catch (error) {
+      const enhancedError = ErrorHelper.parseCommonErrors(error);
+      if (enhancedError) {
+        return { content: [{ type: 'text', text: enhancedError }] };
+      }
+      
+      if (error.message.includes('not found')) {
+        try {
+          // Extract available schemes from error message if present
+          let availableSchemes = [];
+          if (error.message.includes('Available:')) {
+            const availablePart = error.message.split('Available: ')[1];
+            // Find the JSON array part
+            const jsonMatch = availablePart.match(/\[.*?\]/);
+            if (jsonMatch) {
+              availableSchemes = JSON.parse(jsonMatch[0]);
+            }
+          }
+            
+          // Try to find a close match with fuzzy matching
+          const bestMatch = ParameterNormalizer.findBestMatch(schemeName, availableSchemes);
+          let guidance = ErrorHelper.getSchemeNotFoundGuidance(schemeName, availableSchemes);
+          
+          if (bestMatch && bestMatch !== schemeName) {
+            guidance += `\n• Did you mean '${bestMatch}'?`;
+          }
+          
+          return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Scheme '${schemeName}' not found`, guidance) }] };
+        } catch {
+          return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Scheme '${schemeName}' not found`, ErrorHelper.getSchemeNotFoundGuidance(schemeName)) }] };
+        }
+      }
+      
+      return { content: [{ type: 'text', text: `Failed to set active scheme: ${error.message}` }] };
+    }
   }
 
   static async getRunDestinations(projectPath, openProject) {
