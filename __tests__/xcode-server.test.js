@@ -4,6 +4,7 @@ import * as childProcess from 'child_process';
 
 // Get the mocked spawn function
 const mockSpawn = jest.fn();
+const spawn = mockSpawn; // Add alias for tests
 
 // Mock the child_process module
 jest.mock('child_process', () => ({
@@ -134,9 +135,10 @@ describeIfXcode('XcodeMCPServer', () => {
 
     test('should generate correct JXA script for test with arguments', async () => {
       const server = new XcodeMCPServer();
+      const testPath = '/Users/test/TestProject.xcodeproj';
       const testArgs = ['--verbose', '--parallel-testing-enabled', 'YES'];
       
-      const resultPromise = server.test(testArgs);
+      const resultPromise = server.test(testPath, testArgs);
       
       setTimeout(() => {
         mockProcess.stdout.emit('data', 'Test started. Result ID: test-123\n');

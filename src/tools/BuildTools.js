@@ -3,6 +3,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { JXAExecutor } from '../utils/JXAExecutor.js';
 import { BuildLogParser } from '../utils/BuildLogParser.js';
 import { PathValidator } from '../utils/PathValidator.js';
+import { ErrorHelper } from '../utils/ErrorHelper.js';
 
 export class BuildTools {
   static async build(projectPath, schemeName = null, destination = null, openProject) {
@@ -33,6 +34,20 @@ export class BuildTools {
       try {
         await JXAExecutor.execute(setSchemeScript);
       } catch (error) {
+        const enhancedError = ErrorHelper.parseCommonErrors(error);
+        if (enhancedError) {
+          return { content: [{ type: 'text', text: enhancedError }] };
+        }
+        
+        if (error.message.includes('not found')) {
+          try {
+            const availableSchemes = await this._getAvailableSchemes();
+            return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Scheme '${schemeName}' not found`, ErrorHelper.getSchemeNotFoundGuidance(schemeName, availableSchemes)) }] };
+          } catch {
+            return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Scheme '${schemeName}' not found`, ErrorHelper.getSchemeNotFoundGuidance(schemeName)) }] };
+          }
+        }
+        
         return { content: [{ type: 'text', text: `Failed to set scheme '${schemeName}': ${error.message}` }] };
       }
     }
@@ -59,6 +74,20 @@ export class BuildTools {
       try {
         await JXAExecutor.execute(setDestinationScript);
       } catch (error) {
+        const enhancedError = ErrorHelper.parseCommonErrors(error);
+        if (enhancedError) {
+          return { content: [{ type: 'text', text: enhancedError }] };
+        }
+        
+        if (error.message.includes('not found')) {
+          try {
+            const availableDestinations = await this._getAvailableDestinations();
+            return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Destination '${destination}' not found`, ErrorHelper.getDestinationNotFoundGuidance(destination, availableDestinations)) }] };
+          } catch {
+            return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Destination '${destination}' not found`, ErrorHelper.getDestinationNotFoundGuidance(destination)) }] };
+          }
+        }
+        
         return { content: [{ type: 'text', text: `Failed to set destination '${destination}': ${error.message}` }] };
       }
     }
@@ -80,6 +109,10 @@ export class BuildTools {
     try {
       await JXAExecutor.execute(buildScript);
     } catch (error) {
+      const enhancedError = ErrorHelper.parseCommonErrors(error);
+      if (enhancedError) {
+        return { content: [{ type: 'text', text: enhancedError }] };
+      }
       return { content: [{ type: 'text', text: `Failed to start build: ${error.message}` }] };
     }
 
@@ -111,7 +144,7 @@ export class BuildTools {
     }
 
     if (!newLog) {
-      return { content: [{ type: 'text', text: `Build started but no new build log appeared within ${initialWaitAttempts} seconds` }] };
+      return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Build started but no new build log appeared within ${initialWaitAttempts} seconds`, ErrorHelper.getBuildLogNotFoundGuidance()) }] };
     }
 
     console.error(`Monitoring build completion for log: ${newLog.path}`);
@@ -380,5 +413,45 @@ export class BuildTools {
     
     const result = await JXAExecutor.execute(script);
     return { content: [{ type: 'text', text: result }] };
+  }
+
+  static async _getAvailableSchemes() {
+    const script = `
+      (function() {
+        const app = Application('Xcode');
+        const workspace = app.activeWorkspaceDocument();
+        if (!workspace) return [];
+        
+        const schemes = workspace.schemes();
+        return schemes.map(scheme => scheme.name());
+      })()
+    `;
+    
+    try {
+      const result = await JXAExecutor.execute(script);
+      return JSON.parse(result);
+    } catch {
+      return [];
+    }
+  }
+
+  static async _getAvailableDestinations() {
+    const script = `
+      (function() {
+        const app = Application('Xcode');
+        const workspace = app.activeWorkspaceDocument();
+        if (!workspace) return [];
+        
+        const destinations = workspace.runDestinations();
+        return destinations.map(dest => dest.name());
+      })()
+    `;
+    
+    try {
+      const result = await JXAExecutor.execute(script);
+      return JSON.parse(result);
+    } catch {
+      return [];
+    }
   }
 }
