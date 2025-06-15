@@ -141,14 +141,97 @@ export class EnvironmentValidator {
    */
   static async validateXCLogParser() {
     try {
-      const version = await this.executeCommand('xclogparser', ['--version']);
+      // First check if xclogparser exists in PATH
+      const whichResult = await this.executeCommand('which', ['xclogparser']);
+      const xclogparserPath = whichResult.trim();
+      
+      // Try to get version using the 'version' subcommand
+      let version;
+      try {
+        version = await this.executeCommand('xclogparser', ['version']);
+      } catch (versionError) {
+        // Some versions might use different command structure, try help as fallback
+        try {
+          const helpOutput = await this.executeCommand('xclogparser', ['--help']);
+          // If we get help output, xclogparser is working but version command might be different
+          version = 'Unknown version (tool is working)';
+        } catch (helpError) {
+          throw new Error(`xclogparser found at ${xclogparserPath} but cannot execute: ${versionError.message}`);
+        }
+      }
+      
       return {
         valid: true,
         message: `XCLogParser found (${version.trim()})`,
         recoveryInstructions: [],
-        metadata: { version: version.trim() }
+        metadata: { 
+          version: version.trim(),
+          path: xclogparserPath
+        }
       };
     } catch (error) {
+      // Add more detailed error information for debugging
+      const errorDetails = [];
+      let xclogparserLocation = null;
+      
+      // Check if it's a PATH issue
+      try {
+        const whichResult = await this.executeCommand('which', ['xclogparser']);
+        xclogparserLocation = whichResult.trim();
+        errorDetails.push(`xclogparser found at ${xclogparserLocation} but failed to execute`);
+        errorDetails.push(`Error: ${error.message}`);
+        
+        // Check if it's a permission issue
+        try {
+          await this.executeCommand('test', ['-x', xclogparserLocation]);
+        } catch (permError) {
+          errorDetails.push(`Permission issue: ${xclogparserLocation} is not executable`);
+          errorDetails.push('Try: chmod +x ' + xclogparserLocation);
+        }
+      } catch (whichError) {
+        errorDetails.push('xclogparser not found in PATH');
+        errorDetails.push(`Current PATH: ${process.env.PATH}`);
+        
+        // Check common installation locations
+        const commonPaths = [
+          '/usr/local/bin/xclogparser',
+          '/opt/homebrew/bin/xclogparser',
+          '/usr/bin/xclogparser',
+          '/opt/local/bin/xclogparser' // MacPorts
+        ];
+        
+        for (const checkPath of commonPaths) {
+          try {
+            await this.executeCommand('test', ['-f', checkPath]);
+            xclogparserLocation = checkPath;
+            errorDetails.push(`Found at ${checkPath} but not in PATH`);
+            
+            // Check if it's executable
+            try {
+              await this.executeCommand('test', ['-x', checkPath]);
+              errorDetails.push('Add to PATH: export PATH="$PATH:' + path.dirname(checkPath) + '"');
+            } catch (execError) {
+              errorDetails.push(`File exists but not executable: chmod +x ${checkPath}`);
+            }
+            break;
+          } catch (testError) {
+            // File doesn't exist at this path
+          }
+        }
+        
+        if (!xclogparserLocation) {
+          // Check if Homebrew is installed and where it would put xclogparser
+          try {
+            const brewPrefix = await this.executeCommand('brew', ['--prefix']);
+            const brewPath = path.join(brewPrefix.trim(), 'bin/xclogparser');
+            errorDetails.push(`Homebrew detected at: ${brewPrefix.trim()}`);
+            errorDetails.push(`Expected xclogparser location: ${brewPath}`);
+          } catch (brewError) {
+            // Homebrew not found or not working
+          }
+        }
+      }
+      
       return {
         valid: false,
         message: 'XCLogParser not found or not executable',
@@ -156,7 +239,10 @@ export class EnvironmentValidator {
           'Install XCLogParser using Homebrew: brew install xclogparser',
           'Or download from GitHub: https://github.com/MobileNativeFoundation/XCLogParser',
           'Ensure xclogparser is in your PATH',
-          'Note: Build log parsing will be unavailable without XCLogParser'
+          'Note: Build log parsing will be unavailable without XCLogParser',
+          '',
+          'Debugging information:',
+          ...errorDetails.map(detail => `  • ${detail}`)
         ],
         degradedMode: {
           available: true,

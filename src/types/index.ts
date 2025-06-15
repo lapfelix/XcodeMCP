@@ -28,6 +28,7 @@ export interface EnvironmentValidationResult {
     available: boolean;
     limitations?: string[];
   };
+  metadata?: Record<string, any>;
 }
 
 export interface OverallValidationResult {

@@ -173,6 +173,42 @@ XcodeMCP supports configurable logging to help with debugging and monitoring:
 
 All logs are properly formatted with timestamps and log levels, and stderr output maintains compatibility with the MCP protocol.
 
+## Troubleshooting
+
+### XCLogParser Not Found
+
+If you see a warning that XCLogParser is not found even though it's installed:
+
+1. **Verify installation:**
+   ```bash
+   which xclogparser
+   xclogparser version
+   ```
+
+2. **Common issues and solutions:**
+   - **PATH issue**: If `which xclogparser` returns nothing, add the installation directory to your PATH:
+     ```bash
+     # For Homebrew on Intel Macs
+     export PATH="/usr/local/bin:$PATH"
+     
+     # For Homebrew on Apple Silicon Macs
+     export PATH="/opt/homebrew/bin:$PATH"
+     ```
+   
+   - **Wrong command**: Older documentation may reference `xclogparser --version`, but the correct command is `xclogparser version` (without dashes)
+   
+   - **Permission issue**: Ensure xclogparser is executable:
+     ```bash
+     chmod +x $(which xclogparser)
+     ```
+
+3. **Environment validation**: Run the health check to get detailed diagnostics:
+   ```bash
+   echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "xcode_health_check", "arguments": {}}}' | npx xcodemcp
+   ```
+
+**Note**: XcodeMCP can operate without XCLogParser, but build error parsing will be limited.
+
 ## Example
 
 ```bash
