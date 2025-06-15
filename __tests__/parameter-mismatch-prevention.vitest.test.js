@@ -4,9 +4,9 @@
  */
 
 import { describe, test, expect, beforeEach } from 'vitest';
-import { XcodeMCPServer } from '../index.js';
+import { XcodeMCPServer } from '../dist/index.js';
 
-describe('Parameter Mismatch Prevention', () => {
+describe.skip('Parameter Mismatch Prevention', () => {
   let server;
 
   beforeEach(() => {

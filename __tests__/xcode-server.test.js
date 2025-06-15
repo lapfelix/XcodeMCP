@@ -57,7 +57,7 @@ describeIfXcode('XcodeMCPServer', () => {
 
   beforeAll(async () => {
     // Import after mocks are set up
-    const module = await import('../index.js');
+    const module = await import('../dist/index.js');
     XcodeMCPServer = module.XcodeMCPServer;
   });
 

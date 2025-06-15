@@ -4,12 +4,12 @@ describe('XcodeMCP Server Functional Tests', () => {
   test('should validate server startup script syntax', async () => {
     // Test that the main script can be imported without syntax errors
     expect(async () => {
-      await import('../index.js');
+      await import('../dist/index.js');
     }).not.toThrow();
   });
 
   test('should export XcodeMCPServer class', async () => {
-    const module = await import('../index.js');
+    const module = await import('../dist/index.js');
     expect(module.XcodeMCPServer).toBeDefined();
     expect(typeof module.XcodeMCPServer).toBe('function');
   });

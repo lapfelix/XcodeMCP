@@ -55,7 +55,7 @@ describeIfXcode('MCP Tool Handlers', () => {
   let callToolHandler;
 
   beforeAll(async () => {
-    const module = await import('../index.js');
+    const module = await import('../dist/index.js');
     XcodeMCPServer = module.default || module.XcodeMCPServer;
   });
 
