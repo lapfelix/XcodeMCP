@@ -13,8 +13,6 @@ Model Context Protocol (MCP) server that controls Xcode directly through JavaScr
 - Provides comprehensive environment validation and health checks
 - Supports graceful degradation when optional dependencies are missing
 
-> **⚠️ Warning**: This tool directly controls Xcode through JavaScript for Automation (JXA). It may interfere with your active Xcode session and trigger builds that could overwrite unsaved work. Use with caution in active development environments.
-
 ## Requirements
 
 - macOS with Xcode installed
@@ -76,12 +74,20 @@ claude mcp add-json XcodeMCP '{
 }'
 ```
 
-Or clone locally:
+### Development Setup
+
+For local development:
 ```bash
 git clone https://github.com/lapfelix/XcodeMCP.git
 cd XcodeMCP
 npm install
-node index.js
+
+# Run in development mode (TypeScript)
+npm run dev:ts
+
+# Or build and run compiled version
+npm run build
+npm start
 ```
 
 ## Available Tools
