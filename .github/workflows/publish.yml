@@ -53,8 +53,8 @@ jobs:
     
     - name: Run tests
       run: |
-        # Only run simple unit tests in CI, skip all tests that require Xcode
-        npm test -- --testPathPattern="simple-unit|functional" --testPathIgnorePatterns="integration|xcode|mcp-handlers"
+        # Only run simple unit tests in CI, skip integration tests that require Xcode
+        npm test -- __tests__/simple-unit.vitest.test.ts __tests__/environment-validator.vitest.test.ts
       env:
         NODE_ENV: test
         CI: true
