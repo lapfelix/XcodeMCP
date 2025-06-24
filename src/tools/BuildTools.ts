@@ -713,47 +713,31 @@ export class BuildTools {
     const xcresultFiles: { path: string; mtime: number }[] = [];
     
     try {
-      // Extract project name from path for targeted search
-      const projectName = projectPath.split('/').pop()?.replace(/\.(xcodeproj|xcworkspace)$/, '') || '';
+      // Use existing BuildLogParser logic to find the correct DerivedData directory
+      const derivedData = await BuildLogParser.findProjectDerivedData(projectPath);
       
-      // Common locations for xcresult files
-      const searchPaths = [
-        projectPath,
-        join(projectPath, 'build'),
-        join(projectPath, 'DerivedData'),
-        '/tmp'
-      ];
-
-      // Add targeted Xcode's derived data location search
-      const derivedDataBase = join(process.env.HOME || '', 'Library/Developer/Xcode/DerivedData');
-      
-      if (projectName) {
+      if (derivedData) {
+        // Look for xcresult files in the Test logs directory
+        const testLogsDir = join(derivedData, 'Logs', 'Test');
         try {
-          // Look for project-specific DerivedData directories (ProjectName-<hash>)
-          const derivedDataEntries = await readdir(derivedDataBase, { withFileTypes: true });
-          const projectDirs = derivedDataEntries
-            .filter(entry => entry.isDirectory() && entry.name.startsWith(`${projectName}-`))
-            .map(entry => join(derivedDataBase, entry.name));
+          const files = await readdir(testLogsDir);
+          const xcresultDirs = files.filter(file => file.endsWith('.xcresult'));
           
-          Logger.debug(`Found ${projectDirs.length} DerivedData directories for project ${projectName}`);
-          
-          // Search in project-specific DerivedData directories with deeper search
-          for (const projectDir of projectDirs) {
-            await this._searchXCResultRecursive(projectDir, xcresultFiles, 4); // 4 levels: projectDir/Logs/Test/*.xcresult
+          for (const xcresultDir of xcresultDirs) {
+            const fullPath = join(testLogsDir, xcresultDir);
+            try {
+              const stats = await stat(fullPath);
+              xcresultFiles.push({
+                path: fullPath,
+                mtime: stats.mtime.getTime()
+              });
+            } catch {
+              // Ignore files we can't stat
+            }
           }
         } catch (error) {
-          Logger.debug(`Could not search project-specific DerivedData: ${error}`);
-          // Fallback to full DerivedData search
-          await this._searchXCResultRecursive(derivedDataBase, xcresultFiles, 5);
+          Logger.debug(`Could not read test logs directory: ${error}`);
         }
-      } else {
-        // Fallback to full DerivedData search if no project name
-        await this._searchXCResultRecursive(derivedDataBase, xcresultFiles, 5);
-      }
-      
-      // Search other paths
-      for (const searchPath of searchPaths) {
-        await this._searchXCResultRecursive(searchPath, xcresultFiles, 2); // Max 2 levels deep
       }
     } catch (error) {
       Logger.warn(`Error finding xcresult files: ${error}`);
@@ -762,39 +746,6 @@ export class BuildTools {
     return xcresultFiles.sort((a, b) => b.mtime - a.mtime);
   }
 
-  private static async _searchXCResultRecursive(
-    searchPath: string, 
-    xcresultFiles: { path: string; mtime: number }[], 
-    maxDepth: number, 
-    currentDepth: number = 0
-  ): Promise<void> {
-    if (currentDepth >= maxDepth) return;
-    
-    try {
-      const items = await readdir(searchPath, { withFileTypes: true });
-      
-      for (const item of items) {
-        const fullPath = join(searchPath, item.name);
-        
-        if (item.name.endsWith('.xcresult')) {
-          try {
-            const stats = await stat(fullPath);
-            xcresultFiles.push({
-              path: fullPath,
-              mtime: stats.mtime.getTime()
-            });
-          } catch {
-            // Ignore files we can't stat
-          }
-        } else if (item.isDirectory() && !item.name.startsWith('.')) {
-          // Recursively search subdirectories, but skip hidden directories
-          await this._searchXCResultRecursive(fullPath, xcresultFiles, maxDepth, currentDepth + 1);
-        }
-      }
-    } catch {
-      // Ignore directories we can't read
-    }
-  }
 
   private static async _findNewXCResultFile(
     projectPath: string, 
@@ -803,10 +754,6 @@ export class BuildTools {
   ): Promise<string | null> {
     const maxAttempts = 30; // 30 seconds
     let attempts = 0;
-    
-    // Extract project name from path for better filtering
-    const projectName = projectPath.split('/').pop()?.replace(/\.(xcodeproj|xcworkspace)$/, '') || '';
-    Logger.debug(`Looking for xcresult files related to project: ${projectName}`);
     
     while (attempts < maxAttempts) {
       const currentFiles = await this._findXCResultFiles(projectPath);
@@ -827,18 +774,10 @@ export class BuildTools {
       attempts++;
     }
     
-    // If no new file found, try to get the most recent one that matches the project
+    // If no new file found, use the most recent one
     const allFiles = await this._findXCResultFiles(projectPath);
     if (allFiles.length > 0) {
-      // First try to find one that contains the project name
-      let mostRecent = allFiles.find(file => 
-        file.path.includes(projectName) && Date.now() - file.mtime < 3600000
-      );
-      
-      // If not found, use the most recent one overall
-      if (!mostRecent) {
-        mostRecent = allFiles[0];
-      }
+      const mostRecent = allFiles[0];
       
       // Check if it's reasonably recent (within last hour)
       if (mostRecent && Date.now() - mostRecent.mtime < 3600000) {
