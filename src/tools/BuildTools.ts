@@ -713,6 +713,9 @@ export class BuildTools {
     const xcresultFiles: { path: string; mtime: number }[] = [];
     
     try {
+      // Extract project name from path for targeted search
+      const projectName = projectPath.split('/').pop()?.replace(/\.(xcodeproj|xcworkspace)$/, '') || '';
+      
       // Common locations for xcresult files
       const searchPaths = [
         projectPath,
@@ -721,10 +724,34 @@ export class BuildTools {
         '/tmp'
       ];
 
-      // Add Xcode's derived data location with recursive search
-      const derivedDataPath = join(process.env.HOME || '', 'Library/Developer/Xcode/DerivedData');
-      await this._searchXCResultRecursive(derivedDataPath, xcresultFiles, 5); // Max 5 levels deep for DerivedData
+      // Add targeted Xcode's derived data location search
+      const derivedDataBase = join(process.env.HOME || '', 'Library/Developer/Xcode/DerivedData');
       
+      if (projectName) {
+        try {
+          // Look for project-specific DerivedData directories (ProjectName-<hash>)
+          const derivedDataEntries = await readdir(derivedDataBase, { withFileTypes: true });
+          const projectDirs = derivedDataEntries
+            .filter(entry => entry.isDirectory() && entry.name.startsWith(`${projectName}-`))
+            .map(entry => join(derivedDataBase, entry.name));
+          
+          Logger.debug(`Found ${projectDirs.length} DerivedData directories for project ${projectName}`);
+          
+          // Search in project-specific DerivedData directories with deeper search
+          for (const projectDir of projectDirs) {
+            await this._searchXCResultRecursive(projectDir, xcresultFiles, 4); // 4 levels: projectDir/Logs/Test/*.xcresult
+          }
+        } catch (error) {
+          Logger.debug(`Could not search project-specific DerivedData: ${error}`);
+          // Fallback to full DerivedData search
+          await this._searchXCResultRecursive(derivedDataBase, xcresultFiles, 5);
+        }
+      } else {
+        // Fallback to full DerivedData search if no project name
+        await this._searchXCResultRecursive(derivedDataBase, xcresultFiles, 5);
+      }
+      
+      // Search other paths
       for (const searchPath of searchPaths) {
         await this._searchXCResultRecursive(searchPath, xcresultFiles, 2); // Max 2 levels deep
       }
