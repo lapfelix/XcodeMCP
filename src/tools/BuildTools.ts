@@ -718,37 +718,55 @@ export class BuildTools {
         projectPath,
         join(projectPath, 'build'),
         join(projectPath, 'DerivedData'),
-        '/tmp',
-        // Xcode's derived data location
-        join(process.env.HOME || '', 'Library/Developer/Xcode/DerivedData')
+        '/tmp'
       ];
+
+      // Add Xcode's derived data location with recursive search
+      const derivedDataPath = join(process.env.HOME || '', 'Library/Developer/Xcode/DerivedData');
+      await this._searchXCResultRecursive(derivedDataPath, xcresultFiles, 5); // Max 5 levels deep for DerivedData
       
       for (const searchPath of searchPaths) {
-        try {
-          const items = await readdir(searchPath);
-          for (const item of items) {
-            if (item.endsWith('.xcresult')) {
-              const fullPath = join(searchPath, item);
-              try {
-                const stats = await stat(fullPath);
-                xcresultFiles.push({
-                  path: fullPath,
-                  mtime: stats.mtime.getTime()
-                });
-              } catch {
-                // Ignore files we can't stat
-              }
-            }
-          }
-        } catch {
-          // Ignore directories we can't read
-        }
+        await this._searchXCResultRecursive(searchPath, xcresultFiles, 2); // Max 2 levels deep
       }
     } catch (error) {
       Logger.warn(`Error finding xcresult files: ${error}`);
     }
     
     return xcresultFiles.sort((a, b) => b.mtime - a.mtime);
+  }
+
+  private static async _searchXCResultRecursive(
+    searchPath: string, 
+    xcresultFiles: { path: string; mtime: number }[], 
+    maxDepth: number, 
+    currentDepth: number = 0
+  ): Promise<void> {
+    if (currentDepth >= maxDepth) return;
+    
+    try {
+      const items = await readdir(searchPath, { withFileTypes: true });
+      
+      for (const item of items) {
+        const fullPath = join(searchPath, item.name);
+        
+        if (item.name.endsWith('.xcresult')) {
+          try {
+            const stats = await stat(fullPath);
+            xcresultFiles.push({
+              path: fullPath,
+              mtime: stats.mtime.getTime()
+            });
+          } catch {
+            // Ignore files we can't stat
+          }
+        } else if (item.isDirectory() && !item.name.startsWith('.')) {
+          // Recursively search subdirectories, but skip hidden directories
+          await this._searchXCResultRecursive(fullPath, xcresultFiles, maxDepth, currentDepth + 1);
+        }
+      }
+    } catch {
+      // Ignore directories we can't read
+    }
   }
 
   private static async _findNewXCResultFile(
@@ -758,6 +776,10 @@ export class BuildTools {
   ): Promise<string | null> {
     const maxAttempts = 30; // 30 seconds
     let attempts = 0;
+    
+    // Extract project name from path for better filtering
+    const projectName = projectPath.split('/').pop()?.replace(/\.(xcodeproj|xcworkspace)$/, '') || '';
+    Logger.debug(`Looking for xcresult files related to project: ${projectName}`);
     
     while (attempts < maxAttempts) {
       const currentFiles = await this._findXCResultFiles(projectPath);
@@ -769,6 +791,7 @@ export class BuildTools {
         );
         
         if (!wasInitialFile && file.mtime >= testStartTime - 5000) { // 5s buffer
+          Logger.info(`Found new xcresult file: ${file.path}`);
           return file.path;
         }
       }
@@ -777,10 +800,19 @@ export class BuildTools {
       attempts++;
     }
     
-    // If no new file found, try to get the most recent one
+    // If no new file found, try to get the most recent one that matches the project
     const allFiles = await this._findXCResultFiles(projectPath);
     if (allFiles.length > 0) {
-      const mostRecent = allFiles[0];
+      // First try to find one that contains the project name
+      let mostRecent = allFiles.find(file => 
+        file.path.includes(projectName) && Date.now() - file.mtime < 3600000
+      );
+      
+      // If not found, use the most recent one overall
+      if (!mostRecent) {
+        mostRecent = allFiles[0];
+      }
+      
       // Check if it's reasonably recent (within last hour)
       if (mostRecent && Date.now() - mostRecent.mtime < 3600000) {
         Logger.warn(`Using most recent xcresult file: ${mostRecent.path}`);
