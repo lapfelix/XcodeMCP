@@ -341,6 +341,9 @@ export class BuildTools {
     const initialXCResults = await this._findXCResultFiles(projectPath);
     const testStartTime = Date.now();
 
+    // Start monitoring for build log immediately
+    const buildStartTime = Date.now();
+
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
       (function() {
@@ -353,45 +356,200 @@ export class BuildTools {
           : `const actionResult = workspace.test();`
         }
         
-        // Wait for the test action to complete
-        while (true) {
-          if (actionResult.completed()) {
-            break;
-          }
-          delay(0.5);
-        }
-        
-        const status = actionResult.status();
-        const errorMessage = actionResult.errorMessage();
-        
-        if (status === 'failed' && errorMessage) {
-          return JSON.stringify({ status: 'failed', error: errorMessage });
-        }
-        
-        return JSON.stringify({ status: status || 'completed' });
+        // Return immediately - we'll monitor the build separately
+        return JSON.stringify({ 
+          actionId: actionResult.id(),
+          message: 'Test started'
+        });
       })()
     `;
     
     try {
-      const result = await JXAExecutor.execute(script);
-      const testResult = JSON.parse(result);
+      const startResult = await JXAExecutor.execute(script);
+      const { actionId, message } = JSON.parse(startResult);
       
-      // Find the new xcresult file
+      Logger.info(`${message} with action ID: ${actionId}`);
+      
+      // Wait for new build log to appear
+      Logger.info('Waiting for test build log to appear...');
+      
+      let attempts = 0;
+      let newLog = null;
+      const initialWaitAttempts = 30;
+
+      while (attempts < initialWaitAttempts) {
+        const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
+        
+        if (currentLog) {
+          const logTime = currentLog.mtime.getTime();
+          const buildTime = buildStartTime;
+          Logger.debug(`Checking log: ${currentLog.path}, log time: ${logTime}, build time: ${buildTime}, diff: ${logTime - buildTime}ms`);
+          
+          if (logTime > buildTime) {
+            newLog = currentLog;
+            Logger.info(`Found new build log created after test start: ${newLog.path}`);
+            break;
+          }
+        } else {
+          Logger.debug(`No build log found yet, attempt ${attempts + 1}/${initialWaitAttempts}`);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
+      }
+
+      // If we found a build log, monitor it for completion
+      if (newLog) {
+        Logger.info(`Monitoring test build completion for log: ${newLog.path}`);
+        
+        attempts = 0;
+        const maxAttempts = 600; // 10 minutes max for test build
+        let lastLogSize = 0;
+        let stableCount = 0;
+
+        while (attempts < maxAttempts) {
+          try {
+            const logStats = await stat(newLog.path);
+            const currentLogSize = logStats.size;
+            
+            if (currentLogSize === lastLogSize) {
+              stableCount++;
+              if (stableCount >= 1) {
+                Logger.debug(`Log stable for ${stableCount}s, trying to parse...`);
+                const results = await BuildLogParser.parseBuildLog(newLog.path);
+                Logger.debug(`Parse result has ${results.errors.length} errors, ${results.warnings.length} warnings`);
+                const isParseFailure = results.errors.some(error => 
+                  typeof error === 'string' && error.includes('XCLogParser failed to parse the build log.')
+                );
+                if (results && !isParseFailure) {
+                  Logger.info(`Build phase completed, log parsed successfully: ${newLog.path}`);
+                  
+                  // Check if build failed
+                  if (results.errors.length > 0) {
+                    let message = `❌ TEST BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
+                    results.errors.forEach(error => {
+                      message += `  • ${error}\n`;
+                      Logger.error('Test build error:', error);
+                    });
+                    throw new McpError(
+                      ErrorCode.InternalError,
+                      message
+                    );
+                  }
+                  
+                  break;
+                }
+              }
+            } else {
+              lastLogSize = currentLogSize;
+              stableCount = 0;
+            }
+          } catch (error) {
+            if (error instanceof McpError) {
+              throw error; // Re-throw build failures
+            }
+            const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
+            if (currentLog && currentLog.path !== newLog.path && currentLog.mtime.getTime() > buildStartTime) {
+              Logger.debug(`Build log changed to: ${currentLog.path}`);
+              newLog = currentLog;
+              lastLogSize = 0;
+              stableCount = 0;
+            }
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          attempts++;
+        }
+      }
+
+      // Since build passed, we need to wait for the original test action to complete
+      Logger.info('Build succeeded, waiting for test execution to complete...');
+      
+      // First, try to find the xcresult file that will be created
       Logger.info('Looking for new xcresult file...');
-      const newXCResult = await this._findNewXCResultFile(projectPath, initialXCResults, testStartTime);
+      let newXCResult = await this._findNewXCResultFile(projectPath, initialXCResults, testStartTime);
+      
+      // If no xcresult found yet, wait for it to appear
+      if (!newXCResult) {
+        Logger.info('No xcresult file found yet, waiting for it to appear...');
+        let attempts = 0;
+        const maxWaitAttempts = 60; // 1 minute to find the file
+        
+        while (attempts < maxWaitAttempts && !newXCResult) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          newXCResult = await this._findNewXCResultFile(projectPath, initialXCResults, testStartTime);
+          attempts++;
+        }
+      }
+      
+      let testResult = { status: 'completed', error: undefined };
+      
+      if (newXCResult) {
+        Logger.info(`Found xcresult file: ${newXCResult}, waiting for test completion...`);
+        
+        // Wait for the xcresult file to contain complete test results by trying to parse it
+        let attempts = 0;
+        let lastParseAttempt = 0;
+        const maxAttempts = 720; // 12 minutes max (longer than expected 10 minute test duration)
+        
+        while (attempts < maxAttempts) {
+          try {
+            // Try to parse the xcresult file every 10 seconds to see if tests are complete
+            if (attempts % 10 === 0 || attempts - lastParseAttempt >= 10) {
+              lastParseAttempt = attempts;
+              
+              try {
+                Logger.debug(`Attempting to parse XCResult file (attempt ${Math.floor(attempts/10) + 1})...`);
+                const parser = new XCResultParser(newXCResult);
+                const analysis = await parser.analyzeXCResult();
+                
+                // If we can successfully parse and get test results, tests are likely complete
+                if (analysis && analysis.totalTests > 0) {
+                  Logger.info(`XCResult parsing successful! Found ${analysis.totalTests} tests, tests have completed`);
+                  break;
+                } else {
+                  Logger.info(`XCResult parsed but no test data yet (${analysis?.totalTests || 0} tests found)`);
+                }
+              } catch (parseError) {
+                Logger.debug(`XCResult not ready for parsing yet: ${parseError instanceof Error ? parseError.message : parseError}`);
+              }
+            } else {
+              Logger.debug(`Waiting for next parse attempt... (${attempts % 10}/10)`);
+            }
+          } catch (error) {
+            Logger.debug(`Error checking xcresult file: ${error}`);
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          attempts++;
+        }
+        
+        if (attempts >= maxAttempts) {
+          Logger.warn('XCResult file monitoring timeout, proceeding anyway');
+          testResult = { status: 'timeout', error: undefined };
+        } else {
+          testResult = { status: 'completed', error: undefined };
+        }
+      } else {
+        Logger.warn('No xcresult file found, falling back to fixed wait time');
+        // Fall back to waiting a fixed time
+        await new Promise(resolve => setTimeout(resolve, 30000)); // 30 seconds
+        testResult = { status: 'completed', error: undefined };
+      }
       
       if (newXCResult) {
         Logger.info(`Found xcresult: ${newXCResult}`);
         
-        // Wait for xcresult to be fully written and readable
-        Logger.info('Waiting for xcresult to be readable...');
-        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, 60000);
-        
-        if (isReady) {
+        // We already confirmed the xcresult is readable in our completion detection loop
+        // No need to wait again - proceed directly to analysis
+        if (testResult.status === 'completed') {
           try {
             // Analyze the xcresult
             const parser = new XCResultParser(newXCResult);
             const analysis = await parser.analyzeXCResult();
+            
+            // Get detailed test results to show individual test names
+            const testResults = await parser.getTestResults();
             
             let message = `🧪 TESTS COMPLETED${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\n`;
             message += `📊 Test Results Summary:\n`;
@@ -401,8 +559,68 @@ export class BuildTools {
             message += `Pass Rate: ${analysis.passRate.toFixed(1)}%\n`;
             message += `Duration: ${analysis.duration}\n\n`;
             
+            // Extract and categorize individual tests
+            const failedTests: { name: string; id: string }[] = [];
+            const passedTests: { name: string; id: string }[] = [];
+            const skippedTests: { name: string; id: string }[] = [];
+            
+            const extractTests = (nodes: any[], depth = 0) => {
+              for (const node of nodes) {
+                // Only include actual test methods (not test classes/suites)
+                if (node.nodeType === 'testCase' && node.name && node.result) {
+                  const testInfo = {
+                    name: node.name,
+                    id: node.nodeIdentifier || 'unknown'
+                  };
+                  
+                  if (node.result === 'failed') {
+                    failedTests.push(testInfo);
+                  } else if (node.result === 'passed') {
+                    passedTests.push(testInfo);
+                  } else if (node.result === 'skipped') {
+                    skippedTests.push(testInfo);
+                  }
+                }
+                
+                // Recursively process children
+                if (node.children) {
+                  extractTests(node.children, depth + 1);
+                }
+              }
+            };
+            
+            extractTests(testResults.testNodes);
+            
+            if (failedTests.length > 0) {
+              message += `❌ Failed Tests (${failedTests.length}):\n`;
+              failedTests.forEach((test, index) => {
+                message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
+              });
+              message += `\n`;
+            }
+            
+            if (skippedTests.length > 0) {
+              message += `⏭️ Skipped Tests (${skippedTests.length}):\n`;
+              skippedTests.forEach((test, index) => {
+                message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
+              });
+              message += `\n`;
+            }
+            
+            // Only show passed tests if there are failures (to keep output manageable)
+            if (failedTests.length > 0 && passedTests.length > 0) {
+              message += `✅ Passed Tests (${passedTests.length}) - showing first 5:\n`;
+              passedTests.slice(0, 5).forEach((test, index) => {
+                message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
+              });
+              if (passedTests.length > 5) {
+                message += `  ... and ${passedTests.length - 5} more passed tests\n`;
+              }
+              message += `\n`;
+            }
+            
             if (analysis.failedTests > 0) {
-              message += `❌ Some tests failed. Use 'xcresult_browse "${newXCResult}"' to explore detailed results.\n`;
+              message += `Use 'xcresult_browse "${newXCResult}"' to explore detailed results.\n`;
               message += `For console output: 'xcresult_browser_get_console "${newXCResult}" <test-id>'`;
             } else {
               message += `✅ All tests passed! Use 'xcresult_browse "${newXCResult}"' to explore detailed results.`;
@@ -421,12 +639,12 @@ export class BuildTools {
             return { content: [{ type: 'text', text: message }] };
           }
         } else {
-          // XCResult not ready in time
-          let message = `🧪 TESTS COMPLETED${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\n`;
+          // Test completion detection timed out
+          let message = `🧪 TESTS ${testResult.status.toUpperCase()}${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\n`;
           message += `XCResult Path: ${newXCResult}\n`;
           message += `Status: ${testResult.status}\n\n`;
-          message += `⚠️ XCResult file found but not ready for parsing within timeout.\n`;
-          message += `Use 'xcresult_browse "${newXCResult}"' to explore results once file is ready.`;
+          message += `⚠️ Test completion detection timed out, but XCResult file is available.\n`;
+          message += `Use 'xcresult_browse "${newXCResult}"' to explore results.`;
           
           return { content: [{ type: 'text', text: message }] };
         }
@@ -765,8 +983,10 @@ export class BuildTools {
         );
         
         if (!wasInitialFile && file.mtime >= testStartTime - 5000) { // 5s buffer
-          Logger.info(`Found new xcresult file: ${file.path}`);
+          Logger.info(`Found new xcresult file: ${file.path}, mtime: ${new Date(file.mtime)}, test start: ${new Date(testStartTime)}`);
           return file.path;
+        } else if (!wasInitialFile) {
+          Logger.debug(`Found xcresult file but too old: ${file.path}, mtime: ${new Date(file.mtime)}, test start: ${new Date(testStartTime)}`);
         }
       }
       
@@ -774,15 +994,17 @@ export class BuildTools {
       attempts++;
     }
     
-    // If no new file found, use the most recent one
+    // If no new file found, be strict - only return files created very recently
     const allFiles = await this._findXCResultFiles(projectPath);
     if (allFiles.length > 0) {
       const mostRecent = allFiles[0];
       
-      // Check if it's reasonably recent (within last hour)
-      if (mostRecent && Date.now() - mostRecent.mtime < 3600000) {
-        Logger.warn(`Using most recent xcresult file: ${mostRecent.path}`);
+      // Only use files created within 2 minutes of test start (much stricter)
+      if (mostRecent && mostRecent.mtime >= testStartTime - 120000) {
+        Logger.warn(`Using most recent xcresult file within test timeframe: ${mostRecent.path}`);
         return mostRecent.path;
+      } else if (mostRecent) {
+        Logger.debug(`Most recent file too old: ${mostRecent.path}, mtime: ${new Date(mostRecent.mtime)}, test start: ${new Date(testStartTime)}`);
       }
     }
     
