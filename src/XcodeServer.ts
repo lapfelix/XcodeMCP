@@ -9,6 +9,7 @@ import {
 import { BuildTools } from './tools/BuildTools.js';
 import { ProjectTools } from './tools/ProjectTools.js';
 import { InfoTools } from './tools/InfoTools.js';
+import { XCResultTools } from './tools/XCResultTools.js';
 import { PathValidator } from './utils/PathValidator.js';
 import { EnvironmentValidator } from './utils/EnvironmentValidator.js';
 import { Logger } from './utils/Logger.js';
@@ -158,6 +159,7 @@ export class XcodeServer {
     const buildTools = ['xcode_build', 'xcode_test', 'xcode_run', 'xcode_debug', 'xcode_clean'];
     const xcodeTools = [...buildTools, 'xcode_open_project', 'xcode_get_schemes', 'xcode_set_active_scheme', 
                        'xcode_get_run_destinations', 'xcode_get_workspace_info', 'xcode_get_projects'];
+    const xcresultTools = ['xcresult_browse', 'xcresult_browser_get_console', 'xcresult_summary'];
 
     // Check Xcode availability
     if (xcodeTools.includes(toolName) && !validation.xcode?.valid) {
@@ -206,6 +208,22 @@ export class XcodeServer {
           reason: 'Automation permissions not granted',
           instructions: validation.permissions?.recoveryInstructions || [
             'Grant automation permissions in System Preferences'
+          ]
+        };
+      }
+    }
+
+    // XCResult tools only need xcresulttool (part of Xcode Command Line Tools)
+    if (xcresultTools.includes(toolName)) {
+      // Check if we can run xcresulttool - this is included with Xcode Command Line Tools
+      if (!validation.xcode?.valid) {
+        return {
+          blocked: true,
+          degraded: false,
+          reason: 'XCResult tools require Xcode Command Line Tools for xcresulttool',
+          instructions: [
+            'Install Xcode Command Line Tools: xcode-select --install',
+            'Or install full Xcode from the Mac App Store'
           ]
         };
       }
@@ -270,7 +288,7 @@ export class XcodeServer {
           },
           {
             name: 'xcode_build',
-            description: 'Build a specific Xcode project or workspace. If scheme is not provided, builds the currently active scheme. If destination is not provided, uses the currently active destination.',
+            description: 'Build a specific Xcode project or workspace with the specified scheme. If destination is not provided, uses the currently active destination.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -280,14 +298,14 @@ export class XcodeServer {
                 },
                 scheme: {
                   type: 'string',
-                  description: 'Name of the scheme to build (optional - uses active scheme if not provided)',
+                  description: 'Name of the scheme to build',
                 },
                 destination: {
                   type: 'string',
                   description: 'Build destination (optional - uses active destination if not provided)',
                 },
               },
-              required: ['path'],
+              required: ['path', 'scheme'],
             },
           },
           {
@@ -357,7 +375,7 @@ export class XcodeServer {
           },
           {
             name: 'xcode_run',
-            description: 'Run a specific project',
+            description: 'Run a specific project with the specified scheme',
             inputSchema: {
               type: 'object',
               properties: {
@@ -365,13 +383,17 @@ export class XcodeServer {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj or .xcworkspace file',
                 },
+                scheme: {
+                  type: 'string',
+                  description: 'Name of the scheme to run',
+                },
                 commandLineArguments: {
                   type: 'array',
                   items: { type: 'string' },
                   description: 'Additional command line arguments',
                 },
               },
-              required: ['path'],
+              required: ['path', 'scheme'],
             },
           },
           {
@@ -472,6 +494,61 @@ export class XcodeServer {
               properties: {},
             },
           },
+          {
+            name: 'xcresult_browse',
+            description: 'Browse XCResult files - list all tests or show details for a specific test. Returns comprehensive test results including pass/fail status, failure details, and browsing instructions.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                xcresult_path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcresult file',
+                },
+                test_id: {
+                  type: 'string',
+                  description: 'Optional test ID or index number to show details for a specific test',
+                },
+                include_console: {
+                  type: 'boolean',
+                  description: 'Whether to include console output and test activities (only used with test_id)',
+                  default: false,
+                },
+              },
+              required: ['xcresult_path'],
+            },
+          },
+          {
+            name: 'xcresult_browser_get_console',
+            description: 'Get console output and test activities for a specific test in an XCResult file',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                xcresult_path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcresult file',
+                },
+                test_id: {
+                  type: 'string',
+                  description: 'Test ID or index number to get console output for',
+                },
+              },
+              required: ['xcresult_path', 'test_id'],
+            },
+          },
+          {
+            name: 'xcresult_summary',
+            description: 'Get a quick summary of test results from an XCResult file',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                xcresult_path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcresult file',
+                },
+              },
+              required: ['xcresult_path'],
+            },
+          },
         ],
       };
     });
@@ -507,7 +584,7 @@ export class XcodeServer {
           case 'xcode_build':
             return await BuildTools.build(
               args.path as string, 
-              (args.scheme as string) || null, 
+              args.scheme as string, 
               (args.destination as string) || null, 
               this.openProject.bind(this)
             );
@@ -522,6 +599,7 @@ export class XcodeServer {
           case 'xcode_run':
             return await BuildTools.run(
               args.path as string, 
+              args.scheme as string,
               (args.commandLineArguments as string[]) || [], 
               this.openProject.bind(this)
             );
@@ -550,6 +628,19 @@ export class XcodeServer {
             return await InfoTools.getProjects(args.path as string, this.openProject.bind(this));
           case 'xcode_open_file':
             return await InfoTools.openFile(args.filePath as string, args.lineNumber as number);
+          case 'xcresult_browse':
+            return await XCResultTools.xcresultBrowse(
+              args.xcresult_path as string,
+              args.test_id as string | undefined,
+              args.include_console as boolean || false
+            );
+          case 'xcresult_browser_get_console':
+            return await XCResultTools.xcresultBrowserGetConsole(
+              args.xcresult_path as string,
+              args.test_id as string
+            );
+          case 'xcresult_summary':
+            return await XCResultTools.xcresultSummary(args.xcresult_path as string);
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
