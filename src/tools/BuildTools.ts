@@ -354,15 +354,47 @@ export class BuildTools {
         if (!workspace) throw new Error('No active workspace');
         
         ${hasArgs 
-          ? `const result = workspace.test({withCommandLineArguments: ${JSON.stringify(commandLineArguments)}});`
-          : `const result = workspace.test();`
+          ? `const actionResult = workspace.test({withCommandLineArguments: ${JSON.stringify(commandLineArguments)}});`
+          : `const actionResult = workspace.test();`
         }
-        return \`Test started. Result ID: \${result.id()}\`;
+        
+        // Wait for the test action to complete
+        while (true) {
+          if (actionResult.completed()) {
+            break;
+          }
+          delay(0.5);
+        }
+        
+        const status = actionResult.status();
+        const errorMessage = actionResult.errorMessage();
+        
+        if (status === 'failed' && errorMessage) {
+          return JSON.stringify({ status: 'failed', error: errorMessage });
+        }
+        
+        return JSON.stringify({ status: status || 'completed' });
       })()
     `;
     
-    const result = await JXAExecutor.execute(script);
-    return { content: [{ type: 'text', text: result }] };
+    try {
+      const result = await JXAExecutor.execute(script);
+      const testResult = JSON.parse(result);
+      
+      if (testResult.status === 'failed') {
+        return { content: [{ type: 'text', text: `❌ TEST FAILED\n\n${testResult.error || 'Test execution failed'}` }] };
+      }
+      
+      const message = `✅ TESTS COMPLETED${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}`;
+      return { content: [{ type: 'text', text: message }] };
+    } catch (error) {
+      const enhancedError = ErrorHelper.parseCommonErrors(error as Error);
+      if (enhancedError) {
+        return { content: [{ type: 'text', text: enhancedError }] };
+      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: 'text', text: `Failed to run tests: ${errorMessage}` }] };
+    }
   }
 
   public static async run(
