@@ -427,6 +427,20 @@ export class XcodeServer {
             },
           },
           {
+            name: 'find_xcresults',
+            description: 'Find all XCResult files for a specific project with timestamps and file information',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                },
+              },
+              required: ['path'],
+            },
+          },
+          {
             name: 'xcode_get_run_destinations',
             description: 'Get list of available run destinations for a specific project',
             inputSchema: {
@@ -612,6 +626,8 @@ export class XcodeServer {
             );
           case 'xcode_stop':
             return await BuildTools.stop();
+          case 'find_xcresults':
+            return await BuildTools.findXCResults(args.path as string);
           case 'xcode_get_schemes':
             return await ProjectTools.getSchemes(args.path as string, this.openProject.bind(this));
           case 'xcode_get_run_destinations':

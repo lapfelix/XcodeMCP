@@ -861,8 +861,8 @@ export class BuildTools {
     }
   }
 
-  private static async _findXCResultFiles(projectPath: string): Promise<{ path: string; mtime: number }[]> {
-    const xcresultFiles: { path: string; mtime: number }[] = [];
+  private static async _findXCResultFiles(projectPath: string): Promise<{ path: string; mtime: number; size?: number }[]> {
+    const xcresultFiles: { path: string; mtime: number; size?: number }[] = [];
     
     try {
       // Use existing BuildLogParser logic to find the correct DerivedData directory
@@ -881,7 +881,8 @@ export class BuildTools {
               const stats = await stat(fullPath);
               xcresultFiles.push({
                 path: fullPath,
-                mtime: stats.mtime.getTime()
+                mtime: stats.mtime.getTime(),
+                size: stats.size
               });
             } catch {
               // Ignore files we can't stat
@@ -943,5 +944,77 @@ export class BuildTools {
     }
     
     return null;
+  }
+
+  /**
+   * Find XCResult files for a given project
+   */
+  public static async findXCResults(projectPath: string): Promise<McpResult> {
+    const validationError = PathValidator.validateProjectPath(projectPath);
+    if (validationError) return validationError;
+
+    try {
+      const xcresultFiles = await this._findXCResultFiles(projectPath);
+      
+      if (xcresultFiles.length === 0) {
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: `No XCResult files found for project: ${projectPath}\n\nXCResult files are created when you run tests. Try running tests first with 'xcode_test'.`
+          }] 
+        };
+      }
+
+      let message = `🔍 Found ${xcresultFiles.length} XCResult file(s) for project: ${projectPath}\n\n`;
+      message += `📁 XCResult Files (sorted by newest first):\n`;
+      message += '='.repeat(80) + '\n';
+
+      xcresultFiles.forEach((file, index) => {
+        const date = new Date(file.mtime);
+        const timeAgo = this._getTimeAgo(file.mtime);
+        
+        message += `${index + 1}. ${file.path}\n`;
+        message += `   📅 Created: ${date.toLocaleString()} (${timeAgo})\n`;
+        message += `   📊 Size: ${this._formatFileSize(file.size || 0)}\n\n`;
+      });
+
+      message += `💡 Usage:\n`;
+      message += `  • View results: xcresult_browse "<path>"\n`;
+      message += `  • Get console: xcresult_browser_get_console "<path>" <test-id>\n`;
+      
+      return { content: [{ type: 'text', text: message }] };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { 
+        content: [{ 
+          type: 'text', 
+          text: `Failed to find XCResult files: ${errorMessage}` 
+        }] 
+      };
+    }
+  }
+
+  private static _getTimeAgo(timestamp: number): string {
+    const now = Date.now();
+    const diff = now - timestamp;
+    
+    const minutes = Math.floor(diff / (1000 * 60));
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  }
+
+  private static _formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 bytes';
+    
+    const k = 1024;
+    const sizes = ['bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   }
 }

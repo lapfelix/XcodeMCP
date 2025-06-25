@@ -187,7 +187,6 @@ export class XCResultParser {
   }> {
     try {
       const testResults = await this.getTestResults();
-      Logger.debug(`getTestResults returned ${testResults?.testNodes?.length || 0} test nodes`);
       
       const failedTests: { name: string; id: string }[] = [];
       const passedTests: { name: string; id: string }[] = [];
@@ -195,22 +194,19 @@ export class XCResultParser {
       
       const extractTests = (nodes: any[], depth = 0) => {
         for (const node of nodes) {
-          Logger.debug(`Node at depth ${depth}: type=${node.nodeType}, name=${node.name}, result=${node.result}`);
-          
           // Only include actual test methods (not test classes/suites)
-          if (node.nodeType === 'testCase' && node.name && node.result) {
+          if (node.nodeType === 'Test Case' && node.name && node.result) {
             const testInfo = {
               name: node.name,
               id: node.nodeIdentifier || 'unknown'
             };
             
-            Logger.debug(`Found test case: ${testInfo.name} -> ${node.result}`);
-            
-            if (node.result === 'failed') {
+            const result = node.result.toLowerCase();
+            if (result === 'failed') {
               failedTests.push(testInfo);
-            } else if (node.result === 'passed') {
+            } else if (result === 'passed') {
               passedTests.push(testInfo);
-            } else if (node.result === 'skipped') {
+            } else if (result === 'skipped') {
               skippedTests.push(testInfo);
             }
           }
@@ -223,8 +219,6 @@ export class XCResultParser {
       };
       
       extractTests(testResults.testNodes || []);
-      
-      Logger.debug(`Extracted: ${failedTests.length} failed, ${passedTests.length} passed, ${skippedTests.length} skipped`);
       
       return {
         failed: failedTests,
