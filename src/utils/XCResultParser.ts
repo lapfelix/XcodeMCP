@@ -178,6 +178,117 @@ export class XCResultParser {
   }
 
   /**
+   * Extract individual test details from test results
+   */
+  public async extractTestDetails(): Promise<{
+    failed: Array<{ name: string; id: string }>;
+    passed: Array<{ name: string; id: string }>;
+    skipped: Array<{ name: string; id: string }>;
+  }> {
+    try {
+      const testResults = await this.getTestResults();
+      Logger.debug(`getTestResults returned ${testResults?.testNodes?.length || 0} test nodes`);
+      
+      const failedTests: { name: string; id: string }[] = [];
+      const passedTests: { name: string; id: string }[] = [];
+      const skippedTests: { name: string; id: string }[] = [];
+      
+      const extractTests = (nodes: any[], depth = 0) => {
+        for (const node of nodes) {
+          Logger.debug(`Node at depth ${depth}: type=${node.nodeType}, name=${node.name}, result=${node.result}`);
+          
+          // Only include actual test methods (not test classes/suites)
+          if (node.nodeType === 'testCase' && node.name && node.result) {
+            const testInfo = {
+              name: node.name,
+              id: node.nodeIdentifier || 'unknown'
+            };
+            
+            Logger.debug(`Found test case: ${testInfo.name} -> ${node.result}`);
+            
+            if (node.result === 'failed') {
+              failedTests.push(testInfo);
+            } else if (node.result === 'passed') {
+              passedTests.push(testInfo);
+            } else if (node.result === 'skipped') {
+              skippedTests.push(testInfo);
+            }
+          }
+          
+          // Recursively process children
+          if (node.children) {
+            extractTests(node.children, depth + 1);
+          }
+        }
+      };
+      
+      extractTests(testResults.testNodes || []);
+      
+      Logger.debug(`Extracted: ${failedTests.length} failed, ${passedTests.length} passed, ${skippedTests.length} skipped`);
+      
+      return {
+        failed: failedTests,
+        passed: passedTests,
+        skipped: skippedTests
+      };
+    } catch (error) {
+      Logger.warn(`Failed to extract test details: ${error}`);
+      return {
+        failed: [],
+        passed: [],
+        skipped: []
+      };
+    }
+  }
+
+  /**
+   * Format test results summary with optional individual test details
+   */
+  public async formatTestResultsSummary(
+    includeIndividualTests: boolean = false,
+    maxPassedTests: number = 5
+  ): Promise<string> {
+    const analysis = await this.analyzeXCResult();
+    
+    let message = `📊 Test Results Summary:\n`;
+    message += `Result: ${analysis.summary.result === 'Failed' ? '❌' : '✅'} ${analysis.summary.result}\n`;
+    message += `Total: ${analysis.totalTests} | Passed: ${analysis.passedTests} ✅ | Failed: ${analysis.failedTests} ❌ | Skipped: ${analysis.skippedTests} ⏭️\n`;
+    message += `Pass Rate: ${analysis.passRate.toFixed(1)}%\n`;
+    message += `Duration: ${analysis.duration}\n`;
+    
+    if (includeIndividualTests) {
+      const testDetails = await this.extractTestDetails();
+      
+      if (testDetails.failed.length > 0) {
+        message += `\n❌ Failed Tests (${testDetails.failed.length}):\n`;
+        testDetails.failed.forEach((test, index) => {
+          message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
+        });
+      }
+      
+      if (testDetails.skipped.length > 0) {
+        message += `\n⏭️ Skipped Tests (${testDetails.skipped.length}):\n`;
+        testDetails.skipped.forEach((test, index) => {
+          message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
+        });
+      }
+      
+      // Only show passed tests if there are failures (to keep output manageable)
+      if (testDetails.failed.length > 0 && testDetails.passed.length > 0) {
+        message += `\n✅ Passed Tests (${testDetails.passed.length}) - showing first ${maxPassedTests}:\n`;
+        testDetails.passed.slice(0, maxPassedTests).forEach((test, index) => {
+          message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
+        });
+        if (testDetails.passed.length > maxPassedTests) {
+          message += `  ... and ${testDetails.passed.length - maxPassedTests} more passed tests\n`;
+        }
+      }
+    }
+    
+    return message;
+  }
+
+  /**
    * Get console output for a specific test
    */
   public async getConsoleOutput(testId?: string): Promise<string> {

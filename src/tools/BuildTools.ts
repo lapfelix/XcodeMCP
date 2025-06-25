@@ -544,81 +544,15 @@ export class BuildTools {
         // No need to wait again - proceed directly to analysis
         if (testResult.status === 'completed') {
           try {
-            // Analyze the xcresult
+            // Use shared utility to format test results with individual test details
             const parser = new XCResultParser(newXCResult);
-            const analysis = await parser.analyzeXCResult();
-            
-            // Get detailed test results to show individual test names
-            const testResults = await parser.getTestResults();
+            const testSummary = await parser.formatTestResultsSummary(true, 5);
             
             let message = `🧪 TESTS COMPLETED${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\n`;
-            message += `📊 Test Results Summary:\n`;
             message += `XCResult Path: ${newXCResult}\n`;
-            message += `Result: ${analysis.summary.result === 'Failed' ? '❌' : '✅'} ${analysis.summary.result}\n`;
-            message += `Total: ${analysis.totalTests} | Passed: ${analysis.passedTests} ✅ | Failed: ${analysis.failedTests} ❌ | Skipped: ${analysis.skippedTests} ⏭️\n`;
-            message += `Pass Rate: ${analysis.passRate.toFixed(1)}%\n`;
-            message += `Duration: ${analysis.duration}\n\n`;
+            message += testSummary + `\n\n`;
             
-            // Extract and categorize individual tests
-            const failedTests: { name: string; id: string }[] = [];
-            const passedTests: { name: string; id: string }[] = [];
-            const skippedTests: { name: string; id: string }[] = [];
-            
-            const extractTests = (nodes: any[], depth = 0) => {
-              for (const node of nodes) {
-                // Only include actual test methods (not test classes/suites)
-                if (node.nodeType === 'testCase' && node.name && node.result) {
-                  const testInfo = {
-                    name: node.name,
-                    id: node.nodeIdentifier || 'unknown'
-                  };
-                  
-                  if (node.result === 'failed') {
-                    failedTests.push(testInfo);
-                  } else if (node.result === 'passed') {
-                    passedTests.push(testInfo);
-                  } else if (node.result === 'skipped') {
-                    skippedTests.push(testInfo);
-                  }
-                }
-                
-                // Recursively process children
-                if (node.children) {
-                  extractTests(node.children, depth + 1);
-                }
-              }
-            };
-            
-            extractTests(testResults.testNodes);
-            
-            if (failedTests.length > 0) {
-              message += `❌ Failed Tests (${failedTests.length}):\n`;
-              failedTests.forEach((test, index) => {
-                message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
-              });
-              message += `\n`;
-            }
-            
-            if (skippedTests.length > 0) {
-              message += `⏭️ Skipped Tests (${skippedTests.length}):\n`;
-              skippedTests.forEach((test, index) => {
-                message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
-              });
-              message += `\n`;
-            }
-            
-            // Only show passed tests if there are failures (to keep output manageable)
-            if (failedTests.length > 0 && passedTests.length > 0) {
-              message += `✅ Passed Tests (${passedTests.length}) - showing first 5:\n`;
-              passedTests.slice(0, 5).forEach((test, index) => {
-                message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
-              });
-              if (passedTests.length > 5) {
-                message += `  ... and ${passedTests.length - 5} more passed tests\n`;
-              }
-              message += `\n`;
-            }
-            
+            const analysis = await parser.analyzeXCResult();
             if (analysis.failedTests > 0) {
               message += `Use 'xcresult_browse "${newXCResult}"' to explore detailed results.\n`;
               message += `For console output: 'xcresult_browser_get_console "${newXCResult}" <test-id>'`;
