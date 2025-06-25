@@ -5,6 +5,10 @@
 
 Model Context Protocol (MCP) server that controls Xcode directly through JavaScript for Automation (JXA).
 
+<a href="https://glama.ai/mcp/servers/@lapfelix/XcodeMCP">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@lapfelix/XcodeMCP/badge" alt="XcodeMCP MCP server" />
+</a>
+
 ## What it does
 
 - Controls Xcode directly through JavaScript for Automation (not xcodebuild CLI)
