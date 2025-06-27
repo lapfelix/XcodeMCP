@@ -1,6 +1,9 @@
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { Logger } from './Logger.js';
+import type { TestAttachment } from '../types/index.js';
 
 // Data models based on XCResultExplorer
 export interface TestResultsSummary {
@@ -315,6 +318,59 @@ export class XCResultParser {
     } catch (error) {
       return `Error retrieving test activities: ${error instanceof Error ? error.message : String(error)}`;
     }
+  }
+
+  /**
+   * Get test attachments for a specific test from activities output
+   */
+  public async getTestAttachments(testId: string): Promise<TestAttachment[]> {
+    try {
+      const output = await XCResultParser.runXCResultTool([
+        'get', 'test-results', 'activities',
+        '--test-id', testId,
+        '--path', this.xcresultPath,
+        '--format', 'json'
+      ], 30000);
+
+      const cleanedOutput = this.cleanJSONFloats(output);
+      const json = JSON.parse(cleanedOutput);
+      const attachments: TestAttachment[] = [];
+
+      // Parse attachments from activities
+      this.extractAttachmentsFromActivities(json, attachments);
+
+      return attachments;
+    } catch (error) {
+      Logger.warn(`Failed to get test attachments: ${error}`);
+      return [];
+    }
+  }
+
+  /**
+   * Export an attachment to a temporary directory
+   */
+  public async exportAttachment(attachmentId: string, filename?: string): Promise<string> {
+    // Create temporary directory for attachments
+    const tempDir = join(tmpdir(), 'xcode-mcp-attachments');
+    if (!existsSync(tempDir)) {
+      mkdirSync(tempDir, { recursive: true });
+    }
+
+    // Generate output path
+    const outputFilename = filename || `attachment_${attachmentId}`;
+    const outputPath = join(tempDir, outputFilename);
+
+    // Export attachment using xcresulttool
+    await XCResultParser.runXCResultTool([
+      'export', 'object',
+      '--legacy',
+      '--path', this.xcresultPath,
+      '--id', attachmentId,
+      '--type', 'file',
+      '--output-path', outputPath
+    ], 30000);
+
+    return outputPath;
   }
 
   /**
@@ -665,6 +721,53 @@ export class XCResultParser {
       return '⏭️';
     } else {
       return '❓';
+    }
+  }
+
+  /**
+   * Extract attachments from activities JSON recursively
+   */
+  private extractAttachmentsFromActivities(json: any, attachments: TestAttachment[]): void {
+    if (!json) return;
+
+    // Check if current object has attachments
+    if (json.attachments && Array.isArray(json.attachments)) {
+      for (const attachment of json.attachments) {
+        // Handle various property name variations
+        const testAttachment: TestAttachment = {
+          payloadId: attachment.payloadId || attachment.payload_uuid || attachment.payloadUUID,
+          payload_uuid: attachment.payload_uuid || attachment.payloadId || attachment.payloadUUID,
+          payloadUUID: attachment.payloadUUID || attachment.payloadId || attachment.payload_uuid,
+          uniform_type_identifier: attachment.uniform_type_identifier || attachment.uniformTypeIdentifier,
+          uniformTypeIdentifier: attachment.uniformTypeIdentifier || attachment.uniform_type_identifier,
+          filename: attachment.filename || attachment.name,
+          name: attachment.name || attachment.filename,
+          payloadSize: attachment.payloadSize || attachment.payload_size,
+          payload_size: attachment.payload_size || attachment.payloadSize
+        };
+        attachments.push(testAttachment);
+      }
+    }
+
+    // Recursively check testRuns
+    if (json.testRuns && Array.isArray(json.testRuns)) {
+      for (const testRun of json.testRuns) {
+        this.extractAttachmentsFromActivities(testRun, attachments);
+      }
+    }
+
+    // Recursively check activities
+    if (json.activities && Array.isArray(json.activities)) {
+      for (const activity of json.activities) {
+        this.extractAttachmentsFromActivities(activity, attachments);
+      }
+    }
+
+    // Recursively check childActivities
+    if (json.childActivities && Array.isArray(json.childActivities)) {
+      for (const childActivity of json.childActivities) {
+        this.extractAttachmentsFromActivities(childActivity, attachments);
+      }
     }
   }
 }

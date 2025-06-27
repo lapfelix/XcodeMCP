@@ -159,7 +159,7 @@ export class XcodeServer {
     const buildTools = ['xcode_build', 'xcode_test', 'xcode_run', 'xcode_debug', 'xcode_clean'];
     const xcodeTools = [...buildTools, 'xcode_open_project', 'xcode_get_schemes', 'xcode_set_active_scheme', 
                        'xcode_get_run_destinations', 'xcode_get_workspace_info', 'xcode_get_projects'];
-    const xcresultTools = ['xcresult_browse', 'xcresult_browser_get_console', 'xcresult_summary'];
+    const xcresultTools = ['xcresult_browse', 'xcresult_browser_get_console', 'xcresult_summary', 'xcresult_get_screenshot'];
 
     // Check Xcode availability
     if (xcodeTools.includes(toolName) && !validation.xcode?.valid) {
@@ -563,6 +563,28 @@ export class XcodeServer {
               required: ['xcresult_path'],
             },
           },
+          {
+            name: 'xcresult_get_screenshot',
+            description: 'Get screenshot from a failed test at specific timestamp - extracts frame from video attachment using ffmpeg',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                xcresult_path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcresult file',
+                },
+                test_id: {
+                  type: 'string',
+                  description: 'Test ID or index number to get screenshot for',
+                },
+                timestamp: {
+                  type: 'number',
+                  description: 'Timestamp in seconds when to extract the screenshot. WARNING: Use a timestamp BEFORE the failure (e.g., if failure is at 30.71s, use 30.69s) as failure timestamps often show the home screen after the app has crashed or reset.',
+                },
+              },
+              required: ['xcresult_path', 'test_id', 'timestamp'],
+            },
+          },
         ],
       };
     });
@@ -657,6 +679,12 @@ export class XcodeServer {
             );
           case 'xcresult_summary':
             return await XCResultTools.xcresultSummary(args.xcresult_path as string);
+          case 'xcresult_get_screenshot':
+            return await XCResultTools.xcresultGetScreenshot(
+              args.xcresult_path as string,
+              args.test_id as string,
+              args.timestamp as number
+            );
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,

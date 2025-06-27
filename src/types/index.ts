@@ -114,3 +114,16 @@ export interface ChildProcessResult {
   stderr: string;
   code: number;
 }
+
+// XCResult attachment interface - flexible to handle variations in xcresulttool output
+export interface TestAttachment {
+  payloadId?: string;
+  payload_uuid?: string;
+  payloadUUID?: string;
+  uniform_type_identifier?: string;
+  uniformTypeIdentifier?: string;
+  filename?: string;
+  name?: string;
+  payloadSize?: number;
+  payload_size?: number;
+}
