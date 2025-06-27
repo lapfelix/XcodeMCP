@@ -192,7 +192,7 @@ export class BuildTools {
     
     let attempts = 0;
     let newLog = null;
-    const initialWaitAttempts = 1800;
+    const initialWaitAttempts = 3600; // 1 hour max to wait for build log
 
     while (attempts < initialWaitAttempts) {
       const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
@@ -222,7 +222,7 @@ export class BuildTools {
     Logger.info(`Monitoring build completion for log: ${newLog.path}`);
     
     attempts = 0;
-    const maxAttempts = 1200;
+    const maxAttempts = 3600; // 1 hour max for build completion
     let lastLogSize = 0;
     let stableCount = 0;
 
@@ -403,7 +403,7 @@ export class BuildTools {
         Logger.info(`Monitoring test build completion for log: ${newLog.path}`);
         
         attempts = 0;
-        const maxAttempts = 600; // 10 minutes max for test build
+        const maxAttempts = 3600; // 1 hour max for test build
         let lastLogSize = 0;
         let stableCount = 0;
 
@@ -490,7 +490,7 @@ export class BuildTools {
         // Wait for the xcresult file to contain complete test results by trying to parse it
         let attempts = 0;
         let lastParseAttempt = 0;
-        const maxAttempts = 720; // 12 minutes max (longer than expected 10 minute test duration)
+        const maxAttempts = 43200; // 12 hours max - test execution should never timeout
         
         while (attempts < maxAttempts) {
           try {
@@ -719,7 +719,7 @@ export class BuildTools {
     let lastModified = 0;
     let stableCount = 0;
     attempts = 0;
-    const buildMaxAttempts = 600;
+    const buildMaxAttempts = 7200; // 1 hour max for run operation build (600 attempts × 500ms = 5min -> 7200 × 500ms = 1hr)
 
     while (attempts < buildMaxAttempts) {
       const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
