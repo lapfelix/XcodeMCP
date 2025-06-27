@@ -1,7 +1,8 @@
 import { spawn, ChildProcess } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { platform } from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import type { EnvironmentValidation, EnvironmentValidationResult } from '../types/index.js';
 
 export class EnvironmentValidator {
@@ -480,13 +481,29 @@ export class EnvironmentValidator {
   }
 
   /**
+   * Gets the version from package.json
+   */
+  private static getVersion(): string {
+    try {
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const packageJsonPath = path.join(__dirname, '../../package.json');
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+      return packageJson.version || 'unknown';
+    } catch (error) {
+      return 'unknown';
+    }
+  }
+
+  /**
    * Creates a configuration health check report
    */
   public static async createHealthCheckReport(): Promise<string> {
     const results = await this.validateEnvironment();
+    const version = this.getVersion();
     const report = [
-      'XcodeMCP Configuration Health Check',
-      '='.repeat(40),
+      `XcodeMCP Configuration Health Check (v${version})`,
+      '='.repeat(50),
       '',
       this.generateValidationSummary(results),
       ''
