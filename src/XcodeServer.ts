@@ -328,9 +328,9 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
                 schemeName: {
                   type: 'string',
@@ -360,9 +360,9 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
                 commandLineArguments: {
                   type: 'array',
@@ -379,9 +379,9 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
                 scheme: {
                   type: 'string',
@@ -402,9 +402,9 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
                 scheme: {
                   type: 'string',
