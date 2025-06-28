@@ -611,7 +611,6 @@ export class XCResultTools {
                   `💡 Slim version properties:\n` +
                   `  • t = type (element type like Button, StaticText, etc.)\n` +
                   `  • l = label (visible text/accessibility label)\n` +
-                  `  • f = frame (position and size: {x, y, width, height})\n` +
                   `  • c = children (array of child elements)\n` +
                   `  • j = index (reference to full element in original JSON)\n\n` +
                   `🔍 Use xcresult_get_ui_element "${fullPath}" <index> to get full details of any element.\n` +
@@ -1199,8 +1198,8 @@ export class XCResultTools {
     
     const jsonPath = path.join(tempDir, filename);
     
-    // Write JSON with pretty formatting
-    fs.writeFileSync(jsonPath, JSON.stringify(hierarchyData, null, 2), 'utf8');
+    // Write compact JSON
+    fs.writeFileSync(jsonPath, JSON.stringify(hierarchyData), 'utf8');
     
     Logger.info(`Saved UI hierarchy JSON to: ${jsonPath}`);
     return jsonPath;
