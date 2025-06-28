@@ -1250,9 +1250,7 @@ export class XCResultTools {
     return {
       parseMethod: 'slim_ui_tree',
       originalElementCount: flatElements.length,
-      rootElement: slimRoot,
-      // Store reference to original data for element lookup
-      _originalData: hierarchyData
+      rootElement: slimRoot
     };
   }
 
