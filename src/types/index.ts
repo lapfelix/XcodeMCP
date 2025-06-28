@@ -126,4 +126,5 @@ export interface TestAttachment {
   name?: string;
   payloadSize?: number;
   payload_size?: number;
+  timestamp?: number;
 }

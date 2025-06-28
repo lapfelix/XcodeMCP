@@ -159,7 +159,7 @@ export class XcodeServer {
     const buildTools = ['xcode_build', 'xcode_test', 'xcode_run', 'xcode_debug', 'xcode_clean'];
     const xcodeTools = [...buildTools, 'xcode_open_project', 'xcode_get_schemes', 'xcode_set_active_scheme', 
                        'xcode_get_run_destinations', 'xcode_get_workspace_info', 'xcode_get_projects'];
-    const xcresultTools = ['xcresult_browse', 'xcresult_browser_get_console', 'xcresult_summary', 'xcresult_get_screenshot'];
+    const xcresultTools = ['xcresult_browse', 'xcresult_browser_get_console', 'xcresult_summary', 'xcresult_get_screenshot', 'xcresult_get_ui_hierarchy', 'xcresult_get_ui_element', 'xcresult_list_attachments', 'xcresult_export_attachment'];
 
     // Check Xcode availability
     if (xcodeTools.includes(toolName) && !validation.xcode?.valid) {
@@ -585,6 +585,98 @@ export class XcodeServer {
               required: ['xcresult_path', 'test_id', 'timestamp'],
             },
           },
+          {
+            name: 'xcresult_get_ui_hierarchy',
+            description: 'Get UI hierarchy attachment from test as slim AI-readable JSON (default) or full JSON. Returns compressed JSON with one-letter properties for efficient AI analysis.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                xcresult_path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcresult file',
+                },
+                test_id: {
+                  type: 'string',
+                  description: 'Test ID or index number to get UI hierarchy for',
+                },
+                timestamp: {
+                  type: 'number',
+                  description: 'Optional timestamp in seconds to find the closest UI snapshot. If not provided, uses the first available UI snapshot.',
+                },
+                full_hierarchy: {
+                  type: 'boolean',
+                  description: 'Set to true to get the full hierarchy (several MB). Default is false for AI-readable slim version.',
+                },
+              },
+              required: ['xcresult_path', 'test_id'],
+            },
+          },
+          {
+            name: 'xcresult_get_ui_element',
+            description: 'Get full details of a specific UI element by index from a previously exported UI hierarchy JSON file',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                hierarchy_json_path: {
+                  type: 'string',
+                  description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult_get_ui_hierarchy)',
+                },
+                element_index: {
+                  type: 'number',
+                  description: 'Index of the element to get details for (the "j" value from the slim hierarchy)',
+                },
+                include_children: {
+                  type: 'boolean',
+                  description: 'Whether to include children in the response. Defaults to false.',
+                },
+              },
+              required: ['hierarchy_json_path', 'element_index'],
+            },
+          },
+          {
+            name: 'xcresult_list_attachments',
+            description: 'List all attachments for a specific test - shows attachment names, types, and indices for export',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                xcresult_path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcresult file',
+                },
+                test_id: {
+                  type: 'string',
+                  description: 'Test ID or index number to list attachments for',
+                },
+              },
+              required: ['xcresult_path', 'test_id'],
+            },
+          },
+          {
+            name: 'xcresult_export_attachment',
+            description: 'Export a specific attachment by index - can convert App UI hierarchy attachments to JSON',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                xcresult_path: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcresult file',
+                },
+                test_id: {
+                  type: 'string',
+                  description: 'Test ID or index number that contains the attachment',
+                },
+                attachment_index: {
+                  type: 'number',
+                  description: 'Index number of the attachment to export (1-based, from xcresult_list_attachments)',
+                },
+                convert_to_json: {
+                  type: 'boolean',
+                  description: 'If true and attachment is an App UI hierarchy, convert to JSON format',
+                },
+              },
+              required: ['xcresult_path', 'test_id', 'attachment_index'],
+            },
+          },
         ],
       };
     });
@@ -684,6 +776,31 @@ export class XcodeServer {
               args.xcresult_path as string,
               args.test_id as string,
               args.timestamp as number
+            );
+          case 'xcresult_get_ui_hierarchy':
+            return await XCResultTools.xcresultGetUIHierarchy(
+              args.xcresult_path as string,
+              args.test_id as string,
+              args.timestamp as number | undefined,
+              args.full_hierarchy as boolean | undefined
+            );
+          case 'xcresult_get_ui_element':
+            return await XCResultTools.xcresultGetUIElement(
+              args.hierarchy_json_path as string,
+              args.element_index as number,
+              args.include_children as boolean | undefined
+            );
+          case 'xcresult_list_attachments':
+            return await XCResultTools.xcresultListAttachments(
+              args.xcresult_path as string,
+              args.test_id as string
+            );
+          case 'xcresult_export_attachment':
+            return await XCResultTools.xcresultExportAttachment(
+              args.xcresult_path as string,
+              args.test_id as string,
+              args.attachment_index as number,
+              args.convert_to_json as boolean | undefined
             );
           default:
             throw new McpError(

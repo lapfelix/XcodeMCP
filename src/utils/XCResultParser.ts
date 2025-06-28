@@ -325,13 +325,18 @@ export class XCResultParser {
    */
   public async getTestAttachments(testId: string): Promise<TestAttachment[]> {
     try {
+      Logger.info(`Attempting to get test attachments for test: ${testId}`);
+      
+      // Give xcresulttool plenty of time to process large files
       const output = await XCResultParser.runXCResultTool([
         'get', 'test-results', 'activities',
         '--test-id', testId,
         '--path', this.xcresultPath,
         '--format', 'json'
-      ], 30000);
+      ], 600000); // 10 minutes timeout
 
+      Logger.info(`Successfully retrieved activities data for test: ${testId}`);
+      
       const cleanedOutput = this.cleanJSONFloats(output);
       const json = JSON.parse(cleanedOutput);
       const attachments: TestAttachment[] = [];
@@ -339,10 +344,18 @@ export class XCResultParser {
       // Parse attachments from activities
       this.extractAttachmentsFromActivities(json, attachments);
 
+      Logger.info(`Found ${attachments.length} attachments for test: ${testId}`);
       return attachments;
     } catch (error) {
-      Logger.warn(`Failed to get test attachments: ${error}`);
-      return [];
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      Logger.error(`Failed to get test attachments for ${testId}: ${errorMessage}`);
+      
+      // If it's a timeout, provide a more specific error
+      if (errorMessage.includes('timed out')) {
+        throw new Error(`xcresulttool timed out when trying to get attachments for test '${testId}'. This xcresult file may be corrupted, incomplete, or too large. Try with a different test or xcresult file.`);
+      }
+      
+      throw error;
     }
   }
 
@@ -727,8 +740,14 @@ export class XCResultParser {
   /**
    * Extract attachments from activities JSON recursively
    */
-  private extractAttachmentsFromActivities(json: any, attachments: TestAttachment[]): void {
+  private extractAttachmentsFromActivities(json: any, attachments: TestAttachment[], parentTimestamp?: number): void {
     if (!json) return;
+
+    // Extract timestamp from current activity if available
+    let currentTimestamp = parentTimestamp;
+    if (json.timestamp && !isNaN(json.timestamp)) {
+      currentTimestamp = json.timestamp;
+    }
 
     // Check if current object has attachments
     if (json.attachments && Array.isArray(json.attachments)) {
@@ -745,6 +764,12 @@ export class XCResultParser {
           payloadSize: attachment.payloadSize || attachment.payload_size,
           payload_size: attachment.payload_size || attachment.payloadSize
         };
+        
+        // Add timestamp if available
+        if (currentTimestamp !== undefined) {
+          testAttachment.timestamp = currentTimestamp;
+        }
+        
         attachments.push(testAttachment);
       }
     }
@@ -752,21 +777,21 @@ export class XCResultParser {
     // Recursively check testRuns
     if (json.testRuns && Array.isArray(json.testRuns)) {
       for (const testRun of json.testRuns) {
-        this.extractAttachmentsFromActivities(testRun, attachments);
+        this.extractAttachmentsFromActivities(testRun, attachments, currentTimestamp);
       }
     }
 
     // Recursively check activities
     if (json.activities && Array.isArray(json.activities)) {
       for (const activity of json.activities) {
-        this.extractAttachmentsFromActivities(activity, attachments);
+        this.extractAttachmentsFromActivities(activity, attachments, currentTimestamp);
       }
     }
 
     // Recursively check childActivities
     if (json.childActivities && Array.isArray(json.childActivities)) {
       for (const childActivity of json.childActivities) {
-        this.extractAttachmentsFromActivities(childActivity, attachments);
+        this.extractAttachmentsFromActivities(childActivity, attachments, currentTimestamp);
       }
     }
   }

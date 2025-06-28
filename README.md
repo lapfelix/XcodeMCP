@@ -111,8 +111,64 @@ npm start
 - `xcode_set_active_scheme` - Switch active scheme
 - `xcode_get_run_destinations` - List simulators and devices
 
+**XCResult Analysis:**
+- `xcresult_browse` - Browse test results and analyze failures
+- `xcresult_browser_get_console` - Get console output for specific tests
+- `xcresult_summary` - Quick overview of test results
+- `xcresult_get_screenshot` - Extract screenshots from test failures
+- `xcresult_get_ui_hierarchy` - Get UI hierarchy as AI-readable JSON with timestamp selection
+- `xcresult_get_ui_element` - Get detailed properties of specific UI elements by index
+- `xcresult_list_attachments` - List all attachments for a test
+- `xcresult_export_attachment` - Export specific attachments from test results
+
 **Diagnostics:**
 - `xcode_health_check` - Environment validation and troubleshooting
+
+## XCResult Analysis Features
+
+XcodeMCP provides comprehensive tools for analyzing Xcode test results (.xcresult files), making it easy to debug test failures and extract valuable information:
+
+### Test Result Analysis
+- **Browse Results**: Navigate through test hierarchies, view pass/fail status, and examine detailed test information
+- **Console Logs**: Extract console output and test activities with precise timestamps for debugging
+- **Quick Summaries**: Get overview statistics including pass rates, failure counts, and duration
+
+### Visual Debugging
+- **Screenshot Extraction**: Extract PNG screenshots from test failures using ffmpeg frame extraction from video attachments
+- **Timestamp Precision**: Specify exact timestamps to capture UI state at specific moments during test execution
+
+### UI Hierarchy Analysis
+- **AI-Readable Format**: Extract UI hierarchies as compressed JSON with single-letter properties (`t`=type, `l`=label, `f`=frame, `c`=children, `j`=index)
+- **Timestamp Selection**: Automatically find the closest UI hierarchy capture to any specified timestamp
+- **Element Deep-Dive**: Use index references to get full details of any UI element, including accessibility properties and frame information
+- **Size Optimization**: 75%+ size reduction compared to full hierarchy data while maintaining all essential information
+
+### Attachment Management
+- **Complete Inventory**: List all attachments (screenshots, videos, debug descriptions, UI hierarchies) for any test
+- **Selective Export**: Export specific attachments by index or type
+- **Smart Detection**: Automatically identify and categorize different attachment types
+
+### Usage Examples
+
+```bash
+# Browse test results
+xcresult_browse "/path/to/TestResults.xcresult"
+
+# Get console output to find failure timestamps
+xcresult_browser_get_console "/path/to/TestResults.xcresult" "MyTest/testMethod()"
+
+# Get UI hierarchy at specific timestamp (AI-readable slim version)
+xcresult_get_ui_hierarchy "/path/to/TestResults.xcresult" "MyTest/testMethod()" 45.25
+
+# Get full UI hierarchy (with size warning)
+xcresult_get_ui_hierarchy "/path/to/TestResults.xcresult" "MyTest/testMethod()" 45.25 true
+
+# Get detailed properties of a specific UI element
+xcresult_get_ui_element "/path/to/ui_hierarchy_full.json" 15
+
+# Extract screenshot at failure point
+xcresult_get_screenshot "/path/to/TestResults.xcresult" "MyTest/testMethod()" 30.71
+```
 
 ## Configuration
 
