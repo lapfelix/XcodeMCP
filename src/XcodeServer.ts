@@ -337,7 +337,7 @@ export class XcodeServer {
                   description: 'Name of the scheme to activate',
                 },
               },
-              required: ['path', 'schemeName'],
+              required: ['xcodeproj', 'schemeName'],
             },
           },
           {
@@ -370,7 +370,7 @@ export class XcodeServer {
                   description: 'Additional command line arguments',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
@@ -393,7 +393,7 @@ export class XcodeServer {
                   description: 'Additional command line arguments',
                 },
               },
-              required: ['path', 'scheme'],
+              required: ['xcodeproj', 'scheme'],
             },
           },
           {
@@ -415,7 +415,7 @@ export class XcodeServer {
                   description: 'Whether to skip building',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
