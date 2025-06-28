@@ -437,7 +437,7 @@ export class XCResultTools {
         return { 
           content: [{ 
             type: 'text', 
-            text: JSON.stringify(hierarchyJson, null, 2)
+            text: JSON.stringify(hierarchyJson)
           }] 
         };
       }
@@ -1234,10 +1234,7 @@ export class XCResultTools {
         j: currentIndex  // Index reference to full element
       };
 
-      // Add frame if available
-      if (node.attributes?.frame) {
-        slimmed.f = node.attributes.frame;
-      }
+      // Frame removed to reduce noise
 
       // Recurse if children present
       if (Array.isArray(node.children) && node.children.length) {
@@ -1314,7 +1311,7 @@ export class XCResultTools {
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify(result, null, 2)
+          text: JSON.stringify(result)
         }]
       };
 
