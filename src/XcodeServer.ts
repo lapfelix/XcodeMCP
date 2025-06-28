@@ -278,12 +278,12 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
@@ -292,7 +292,7 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available)',
                 },
@@ -305,7 +305,7 @@ export class XcodeServer {
                   description: 'Build destination (optional - uses active destination if not provided)',
                 },
               },
-              required: ['path', 'scheme'],
+              required: ['xcodeproj', 'scheme'],
             },
           },
           {
@@ -314,12 +314,12 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
@@ -346,12 +346,12 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
@@ -432,12 +432,12 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
@@ -446,12 +446,12 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
@@ -460,12 +460,12 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
@@ -474,12 +474,12 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                path: {
+                xcodeproj: {
                   type: 'string',
                   description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
-              required: ['path'],
+              required: ['xcodeproj'],
             },
           },
           {
@@ -699,41 +699,41 @@ export class XcodeServer {
 
         switch (name) {
           case 'xcode_open_project':
-            const result = await ProjectTools.openProject(args.path as string);
+            const result = await ProjectTools.openProject(args.xcodeproj as string);
             if (result && 'content' in result && result.content?.[0] && 'text' in result.content[0]) {
               const textContent = result.content[0];
               if (textContent.type === 'text' && typeof textContent.text === 'string') {
                 if (!textContent.text.includes('Error') && !textContent.text.includes('does not exist')) {
-                  this.currentProjectPath = args.path as string;
+                  this.currentProjectPath = args.xcodeproj as string;
                 }
               }
             }
             return result;
           case 'xcode_build':
             return await BuildTools.build(
-              args.path as string, 
+              args.xcodeproj as string, 
               args.scheme as string, 
               (args.destination as string) || null, 
               this.openProject.bind(this)
             );
           case 'xcode_clean':
-            return await BuildTools.clean(args.path as string, this.openProject.bind(this));
+            return await BuildTools.clean(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_test':
             return await BuildTools.test(
-              args.path as string, 
+              args.xcodeproj as string, 
               (args.commandLineArguments as string[]) || [], 
               this.openProject.bind(this)
             );
           case 'xcode_run':
             return await BuildTools.run(
-              args.path as string, 
+              args.xcodeproj as string, 
               args.scheme as string,
               (args.commandLineArguments as string[]) || [], 
               this.openProject.bind(this)
             );
           case 'xcode_debug':
             return await BuildTools.debug(
-              args.path as string, 
+              args.xcodeproj as string, 
               args.scheme as string, 
               args.skipBuilding as boolean, 
               this.openProject.bind(this)
@@ -741,21 +741,21 @@ export class XcodeServer {
           case 'xcode_stop':
             return await BuildTools.stop();
           case 'find_xcresults':
-            return await BuildTools.findXCResults(args.path as string);
+            return await BuildTools.findXCResults(args.xcodeproj as string);
           case 'xcode_get_schemes':
-            return await ProjectTools.getSchemes(args.path as string, this.openProject.bind(this));
+            return await ProjectTools.getSchemes(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_get_run_destinations':
-            return await ProjectTools.getRunDestinations(args.path as string, this.openProject.bind(this));
+            return await ProjectTools.getRunDestinations(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_set_active_scheme':
             return await ProjectTools.setActiveScheme(
-              args.path as string, 
+              args.xcodeproj as string, 
               args.schemeName as string, 
               this.openProject.bind(this)
             );
           case 'xcode_get_workspace_info':
-            return await InfoTools.getWorkspaceInfo(args.path as string, this.openProject.bind(this));
+            return await InfoTools.getWorkspaceInfo(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_get_projects':
-            return await InfoTools.getProjects(args.path as string, this.openProject.bind(this));
+            return await InfoTools.getProjects(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_open_file':
             return await InfoTools.openFile(args.filePath as string, args.lineNumber as number);
           case 'xcresult_browse':
