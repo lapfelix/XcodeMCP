@@ -823,6 +823,7 @@ export class XCResultTools {
     
     let closest = attachments[0];
     let minDifference = Infinity;
+    let attachmentsWithTimestamps = 0;
     
     // Log available attachments and their timestamps for debugging
     Logger.info(`Finding closest attachment to timestamp ${timestamp}s among ${attachments.length} attachments`);
@@ -831,18 +832,25 @@ export class XCResultTools {
       // Use timestamp if available, otherwise try to extract from name
       let attachmentTime = attachment.timestamp;
       
-      if (!attachmentTime && attachment.name) {
+      // If no direct timestamp, try alternative approaches
+      if (attachmentTime === undefined || isNaN(attachmentTime)) {
         // Try to extract timestamp from attachment name if it contains time info
-        const timeMatch = attachment.name.match(/t\s*=\s*([\d.]+)s/);
-        if (timeMatch) {
-          attachmentTime = parseFloat(timeMatch[1] || '0');
+        if (attachment.name) {
+          const timeMatch = attachment.name.match(/t\s*=\s*([\d.]+)s/);
+          if (timeMatch && timeMatch[1]) {
+            attachmentTime = parseFloat(timeMatch[1]);
+          }
         }
       }
       
+      // Log attachment details for debugging
+      Logger.info(`  Attachment "${attachment.name}" - timestamp: ${attachmentTime}, type: ${attachment.uniform_type_identifier || attachment.uniformTypeIdentifier || 'unknown'}`);
+      
       if (attachmentTime !== undefined && !isNaN(attachmentTime)) {
+        attachmentsWithTimestamps++;
         // Both timestamps should be in seconds
         const difference = Math.abs(attachmentTime - timestamp);
-        Logger.info(`  Attachment "${attachment.name}" at ${attachmentTime}s, difference: ${difference}s`);
+        Logger.info(`    Time difference: ${difference}s`);
         
         if (difference < minDifference) {
           minDifference = difference;
@@ -851,9 +859,29 @@ export class XCResultTools {
       }
     }
     
-    if (closest) {
-      Logger.info(`Selected attachment "${closest.name}" with minimum time difference of ${minDifference}s`);
+    // If no attachments have timestamps, use a different strategy
+    if (attachmentsWithTimestamps === 0) {
+      Logger.info(`No timestamp information found for UI hierarchy attachments. Using attachment order heuristic.`);
+      
+      // For UI hierarchy attachments without timestamps, prefer the later one
+      // when the requested timestamp is > 60s (indicating late in test execution)
+      if (timestamp > 60 && attachments.length >= 2) {
+        const lastAttachment = attachments[attachments.length - 1];
+        if (lastAttachment) {
+          closest = lastAttachment; // Use last attachment
+          Logger.info(`Selected last attachment "${closest.name || 'unnamed'}" based on late timestamp heuristic (${timestamp}s > 60s)`);
+        }
+      } else {
+        const firstAttachment = attachments[0];
+        if (firstAttachment) {
+          closest = firstAttachment; // Use first attachment for early timestamps
+          Logger.info(`Selected first attachment "${closest.name || 'unnamed'}" based on early timestamp heuristic (${timestamp}s <= 60s)`);
+        }
+      }
+    } else if (closest) {
+      Logger.info(`Selected attachment "${closest.name}" with minimum time difference of ${minDifference}s (found timestamps on ${attachmentsWithTimestamps}/${attachments.length} attachments)`);
     }
+    
     return closest;
   }
 
