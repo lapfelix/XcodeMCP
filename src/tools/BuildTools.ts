@@ -179,6 +179,9 @@ export class BuildTools {
     
     try {
       await JXAExecutor.execute(buildScript);
+      
+      // Check for and handle "replace existing build" alert
+      await this._handleReplaceExistingBuildAlert();
     } catch (error) {
       const enhancedError = ErrorHelper.parseCommonErrors(error as Error);
       if (enhancedError) {
@@ -369,6 +372,9 @@ export class BuildTools {
       const { actionId, message } = JSON.parse(startResult);
       
       Logger.info(`${message} with action ID: ${actionId}`);
+      
+      // Check for and handle "replace existing build" alert
+      await this._handleReplaceExistingBuildAlert();
       
       // Wait for new build log to appear
       Logger.info('Waiting for test build log to appear...');
@@ -737,6 +743,9 @@ export class BuildTools {
     `;
     
     const runResult = await JXAExecutor.execute(script);
+    
+    // Check for and handle "replace existing build" alert
+    await this._handleReplaceExistingBuildAlert();
 
     let newLog = null;
     let attempts = 0;
@@ -843,6 +852,10 @@ export class BuildTools {
     `;
     
     const result = await JXAExecutor.execute(script);
+    
+    // Check for and handle "replace existing build" alert
+    await this._handleReplaceExistingBuildAlert();
+    
     return { content: [{ type: 'text', text: result }] };
   }
 
@@ -1058,5 +1071,180 @@ export class BuildTools {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  }
+
+  /**
+   * Handle alerts that appear when starting builds/tests while another operation is in progress.
+   * This includes "replace existing build" alerts and similar dialog overlays.
+   */
+  private static async _handleReplaceExistingBuildAlert(): Promise<void> {
+    const alertScript = `
+      (function() {
+        const app = Application('Xcode');
+        let alertHandled = false;
+        
+        try {
+          // Check for modal alert sheets first
+          const windows = app.windows();
+          for (let i = 0; i < windows.length; i++) {
+            const window = windows[i];
+            try {
+              const sheets = window.sheets();
+              if (sheets && sheets.length > 0) {
+                const sheet = sheets[0];
+                const buttons = sheet.buttons();
+                
+                // Look for "Replace" button or similar confirmation buttons
+                for (let j = 0; j < buttons.length; j++) {
+                  const button = buttons[j];
+                  const buttonName = button.name();
+                  
+                  if (buttonName && (
+                    buttonName.toLowerCase().includes('replace') ||
+                    buttonName.toLowerCase().includes('stop') ||
+                    buttonName.toLowerCase() === 'ok' ||
+                    buttonName.toLowerCase() === 'yes'
+                  )) {
+                    button.click();
+                    alertHandled = true;
+                    return 'Alert handled: clicked ' + buttonName;
+                  }
+                }
+              }
+            } catch (e) {
+              // Continue to next window if this one fails
+            }
+          }
+          
+          // Check for embedded alert views within the main window
+          // These might be part of the build progress area or toolbar
+          if (!alertHandled) {
+            const mainWindow = app.windows()[0];
+            if (mainWindow) {
+              try {
+                // Try to find any buttons with alert-like text in the main interface
+                const allButtons = mainWindow.entireContents().filter(function(element) {
+                  try {
+                    return element.constructor.name === 'Button';
+                  } catch (e) {
+                    return false;
+                  }
+                });
+                
+                for (let k = 0; k < allButtons.length; k++) {
+                  try {
+                    const button = allButtons[k];
+                    const buttonName = button.name();
+                    
+                    if (buttonName && (
+                      buttonName.toLowerCase().includes('replace') ||
+                      buttonName.toLowerCase().includes('stop') ||
+                      (buttonName.toLowerCase().includes('cancel') && buttonName.toLowerCase().includes('build'))
+                    )) {
+                      button.click();
+                      alertHandled = true;
+                      return 'Embedded alert handled: clicked ' + buttonName;
+                    }
+                  } catch (e) {
+                    // Continue to next button if this one fails
+                  }
+                }
+              } catch (e) {
+                // Failed to search for embedded buttons
+              }
+            }
+          }
+          
+          // Try system-level alert handling as fallback
+          if (!alertHandled) {
+            const systemEvents = Application('System Events');
+            const processes = systemEvents.processes.whose({name: 'Xcode'});
+            
+            if (processes.length > 0) {
+              const xcodeProcess = processes[0];
+              const dialogs = xcodeProcess.windows.whose({subrole: 'AXDialog'});
+              
+              for (let d = 0; d < dialogs.length; d++) {
+                try {
+                  const dialog = dialogs[d];
+                  const buttons = dialog.buttons();
+                  
+                  for (let b = 0; b < buttons.length; b++) {
+                    const button = buttons[b];
+                    const buttonTitle = button.title();
+                    
+                    if (buttonTitle && (
+                      buttonTitle.toLowerCase().includes('replace') ||
+                      buttonTitle.toLowerCase().includes('stop') ||
+                      buttonTitle.toLowerCase() === 'ok'
+                    )) {
+                      button.click();
+                      alertHandled = true;
+                      return 'System dialog handled: clicked ' + buttonTitle;
+                    }
+                  }
+                } catch (e) {
+                  // Continue to next dialog
+                }
+              }
+            }
+          }
+          
+          // Additional check for build progress indicators and embedded alerts
+          if (!alertHandled) {
+            try {
+              const mainWindow = app.windows()[0];
+              if (mainWindow) {
+                // Look specifically in areas where build alerts typically appear
+                // such as the navigator area, toolbar, or status areas
+                const allElements = mainWindow.entireContents();
+                
+                for (let e = 0; e < allElements.length; e++) {
+                  try {
+                    const element = allElements[e];
+                    
+                    // Check for text that indicates an active operation alert
+                    if (element.description && typeof element.description === 'function') {
+                      const desc = element.description();
+                      if (desc && (
+                        desc.toLowerCase().includes('replace') ||
+                        desc.toLowerCase().includes('stop build') ||
+                        desc.toLowerCase().includes('cancel build')
+                      )) {
+                        // Try to click this element if it's clickable
+                        if (element.click && typeof element.click === 'function') {
+                          element.click();
+                          alertHandled = true;
+                          return 'Embedded element handled: clicked element with description ' + desc;
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    // Continue to next element
+                  }
+                }
+              }
+            } catch (e) {
+              // Failed to search embedded elements
+            }
+          }
+          
+          return alertHandled ? 'Alert handled successfully' : 'No alert found';
+          
+        } catch (error) {
+          return 'Alert check failed: ' + error.message;
+        }
+      })()
+    `;
+    
+    try {
+      const result = await JXAExecutor.execute(alertScript);
+      if (result && result !== 'No alert found') {
+        Logger.info(`Alert handling: ${result}`);
+      }
+    } catch (error) {
+      // Don't fail the main operation if alert handling fails
+      Logger.debug(`Alert handling failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
