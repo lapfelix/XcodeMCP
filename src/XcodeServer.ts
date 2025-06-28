@@ -280,7 +280,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
               },
               required: ['xcodeproj'],
@@ -294,7 +294,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
                 scheme: {
                   type: 'string',
@@ -316,7 +316,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
               },
               required: ['xcodeproj'],
@@ -348,7 +348,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
               },
               required: ['xcodeproj'],
@@ -434,7 +434,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
               },
               required: ['xcodeproj'],
@@ -448,7 +448,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
               },
               required: ['xcodeproj'],
@@ -462,7 +462,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
               },
               required: ['xcodeproj'],
@@ -476,7 +476,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
                 },
               },
               required: ['xcodeproj'],
