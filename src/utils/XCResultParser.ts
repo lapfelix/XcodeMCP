@@ -341,8 +341,11 @@ export class XCResultParser {
       const json = JSON.parse(cleanedOutput);
       const attachments: TestAttachment[] = [];
 
+      // Find test start time for relative timestamp conversion
+      const testStartTime = this.findTestStartTime(json);
+      
       // Parse attachments from activities
-      this.extractAttachmentsFromActivities(json, attachments);
+      this.extractAttachmentsFromActivities(json, attachments, undefined, testStartTime);
 
       Logger.info(`Found ${attachments.length} attachments for test: ${testId}`);
       return attachments;
@@ -740,7 +743,7 @@ export class XCResultParser {
   /**
    * Extract attachments from activities JSON recursively
    */
-  private extractAttachmentsFromActivities(json: any, attachments: TestAttachment[], parentTimestamp?: number): void {
+  private extractAttachmentsFromActivities(json: any, attachments: TestAttachment[], parentTimestamp?: number, testStartTime?: number): void {
     if (!json) return;
 
     // Extract timestamp from current activity if available
@@ -765,8 +768,15 @@ export class XCResultParser {
           payload_size: attachment.payload_size || attachment.payloadSize
         };
         
-        // Add timestamp if available
-        if (currentTimestamp !== undefined) {
+        // Add timestamp if available - prefer attachment's own timestamp, fallback to current activity timestamp
+        if (attachment.timestamp !== undefined && !isNaN(attachment.timestamp)) {
+          // Convert absolute timestamp to relative timestamp from test start
+          if (testStartTime !== undefined) {
+            testAttachment.timestamp = attachment.timestamp - testStartTime;
+          } else {
+            testAttachment.timestamp = attachment.timestamp;
+          }
+        } else if (currentTimestamp !== undefined) {
           testAttachment.timestamp = currentTimestamp;
         }
         
@@ -777,22 +787,55 @@ export class XCResultParser {
     // Recursively check testRuns
     if (json.testRuns && Array.isArray(json.testRuns)) {
       for (const testRun of json.testRuns) {
-        this.extractAttachmentsFromActivities(testRun, attachments, currentTimestamp);
+        this.extractAttachmentsFromActivities(testRun, attachments, currentTimestamp, testStartTime);
       }
     }
 
     // Recursively check activities
     if (json.activities && Array.isArray(json.activities)) {
       for (const activity of json.activities) {
-        this.extractAttachmentsFromActivities(activity, attachments, currentTimestamp);
+        this.extractAttachmentsFromActivities(activity, attachments, currentTimestamp, testStartTime);
       }
     }
 
     // Recursively check childActivities
     if (json.childActivities && Array.isArray(json.childActivities)) {
       for (const childActivity of json.childActivities) {
-        this.extractAttachmentsFromActivities(childActivity, attachments, currentTimestamp);
+        this.extractAttachmentsFromActivities(childActivity, attachments, currentTimestamp, testStartTime);
       }
     }
+  }
+
+  /**
+   * Find the test start time from the activities JSON to enable relative timestamp calculation
+   */
+  private findTestStartTime(json: any): number | undefined {
+    // Look for the earliest startTime in the test activities
+    let earliestStartTime: number | undefined;
+
+    const findEarliestTime = (obj: any): void => {
+      if (!obj) return;
+      
+      // Check current object for startTime
+      if (obj.startTime !== undefined && !isNaN(obj.startTime)) {
+        if (earliestStartTime === undefined || obj.startTime < earliestStartTime) {
+          earliestStartTime = obj.startTime;
+        }
+      }
+      
+      // Recursively check nested structures
+      if (obj.testRuns && Array.isArray(obj.testRuns)) {
+        obj.testRuns.forEach(findEarliestTime);
+      }
+      if (obj.activities && Array.isArray(obj.activities)) {
+        obj.activities.forEach(findEarliestTime);
+      }
+      if (obj.childActivities && Array.isArray(obj.childActivities)) {
+        obj.childActivities.forEach(findEarliestTime);
+      }
+    };
+
+    findEarliestTime(json);
+    return earliestStartTime;
   }
 }
