@@ -604,6 +604,32 @@ export class XCResultTools {
         const fullFilename = `ui_hierarchy_full_${testNode.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.json`;
         const fullPath = await this.saveUIHierarchyJSON(hierarchyData, fullFilename);
         
+        // Try to find a screenshot at the specified timestamp
+        let screenshotInfo = '';
+        const screenshotTimestamp = timestamp || selectedAttachment.timestamp;
+        if (screenshotTimestamp !== undefined) {
+          try {
+            const screenshotResult = await this.xcresultGetScreenshot(
+              xcresultPath, 
+              testId, 
+              screenshotTimestamp
+            );
+            if (screenshotResult && screenshotResult.content?.[0] && 'text' in screenshotResult.content[0]) {
+              const textContent = screenshotResult.content[0];
+              if (textContent.type === 'text' && typeof textContent.text === 'string') {
+                // Extract the screenshot path from the result text
+                const pathMatch = textContent.text.match(/Screenshot extracted .+: (.+)/);
+                if (pathMatch && pathMatch[1]) {
+                  screenshotInfo = `\n📸 Screenshot at timestamp ${screenshotTimestamp}s: ${pathMatch[1]}`;
+                }
+              }
+            }
+          } catch (error) {
+            // Screenshot extraction failed, continue without it
+            Logger.info(`Could not extract screenshot at timestamp ${screenshotTimestamp}s: ${error}`);
+          }
+        }
+        
         return { 
           content: [{ 
             type: 'text', 
@@ -614,7 +640,7 @@ export class XCResultTools {
                   `  • c = children (array of child elements)\n` +
                   `  • j = index (reference to full element in original JSON)\n\n` +
                   `🔍 Use xcresult_get_ui_element "${fullPath}" <index> to get full details of any element.\n` +
-                  `⚠️  To get the full hierarchy (several MB), use: full_hierarchy=true`
+                  `⚠️  To get the full hierarchy (several MB), use: full_hierarchy=true${screenshotInfo}`
           }] 
         };
       }
