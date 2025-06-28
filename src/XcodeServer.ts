@@ -280,7 +280,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
               required: ['path'],
@@ -294,7 +294,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file to build',
+                  description: 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available)',
                 },
                 scheme: {
                   type: 'string',
@@ -316,7 +316,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
               required: ['path'],
@@ -330,7 +330,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
                 schemeName: {
                   type: 'string',
@@ -348,7 +348,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
               required: ['path'],
@@ -362,7 +362,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
                 commandLineArguments: {
                   type: 'array',
@@ -381,7 +381,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
                 scheme: {
                   type: 'string',
@@ -404,7 +404,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
                 scheme: {
                   type: 'string',
@@ -434,7 +434,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
               required: ['path'],
@@ -448,7 +448,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
               required: ['path'],
@@ -462,7 +462,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
               required: ['path'],
@@ -476,7 +476,7 @@ export class XcodeServer {
               properties: {
                 path: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj or .xcworkspace file',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
                 },
               },
               required: ['path'],
