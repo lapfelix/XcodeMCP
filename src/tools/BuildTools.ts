@@ -375,7 +375,7 @@ export class BuildTools {
       
       let attempts = 0;
       let newLog = null;
-      const initialWaitAttempts = 120; // Increased to 2 minutes for Swift Package resolution
+      const initialWaitAttempts = 600; // Increased to 10 minutes for Swift Package resolution
 
       while (attempts < initialWaitAttempts) {
         const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
@@ -400,10 +400,10 @@ export class BuildTools {
       
       // If no build log appeared, it likely means the build failed before it could start
       if (!newLog) {
-        Logger.error('No build log found after 2 minutes - build likely failed to start');
+        Logger.error('No build log found after 10 minutes - build likely failed to start');
         throw new McpError(
           ErrorCode.InternalError,
-          `❌ TEST BUILD FAILED TO START\n\nNo build log was created after 2 minutes. This usually indicates:\n• Swift Package Manager hanging during dependency resolution\n• Invalid project configuration\n• Missing dependencies\n• Simulator/destination issues\n• Xcode workspace/project problems\n\nTry:\n• Resolving packages manually in Xcode first\n• Clearing derived data\n• Checking your project setup`
+          `❌ TEST BUILD FAILED TO START\n\nNo build log was created after 10 minutes. This usually indicates:\n• Swift Package Manager hanging during dependency resolution\n• Invalid project configuration\n• Missing dependencies\n• Simulator/destination issues\n• Xcode workspace/project problems\n\nTry:\n• Resolving packages manually in Xcode first\n• Clearing derived data\n• Checking your project setup`
         );
       }
 
