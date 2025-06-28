@@ -568,9 +568,22 @@ export class BuildTools {
               message += `  • Get console output: xcresult_browser_get_console "${newXCResult}" <test-id>\n`;
               message += `  • Get screenshots: xcresult_get_screenshot "${newXCResult}" <test-id> <timestamp>\n`;
               message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>\n`;
+              message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
+              message += `  • List attachments: xcresult_list_attachments "${newXCResult}" <test-id>\n`;
+              message += `  • Export attachments: xcresult_export_attachment "${newXCResult}" <test-id> <index>\n`;
+              message += `  • Quick summary: xcresult_summary "${newXCResult}"\n`;
               message += `\n💡 Tip: Use console output to find failure timestamps for screenshots and UI hierarchies`;
             } else {
-              message += `✅ All tests passed! Use 'xcresult_browse "${newXCResult}"' to explore detailed results.`;
+              message += `✅ All tests passed!\n\n`;
+              message += `💡 Explore test results:\n`;
+              message += `  • Browse results: xcresult_browse "${newXCResult}"\n`;
+              message += `  • Get console output: xcresult_browser_get_console "${newXCResult}" <test-id>\n`;
+              message += `  • Get screenshots: xcresult_get_screenshot "${newXCResult}" <test-id> <timestamp>\n`;
+              message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>\n`;
+              message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
+              message += `  • List attachments: xcresult_list_attachments "${newXCResult}" <test-id>\n`;
+              message += `  • Export attachments: xcresult_export_attachment "${newXCResult}" <test-id> <index>\n`;
+              message += `  • Quick summary: xcresult_summary "${newXCResult}"`;
             }
             
             return { content: [{ type: 'text', text: message }] };
@@ -585,7 +598,11 @@ export class BuildTools {
             message += `  • Browse results: xcresult_browse "${newXCResult}"\n`;
             message += `  • Get console output: xcresult_browser_get_console "${newXCResult}" <test-id>\n`;
             message += `  • Get screenshots: xcresult_get_screenshot "${newXCResult}" <test-id> <timestamp>\n`;
-            message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>`;
+            message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>\n`;
+            message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
+            message += `  • List attachments: xcresult_list_attachments "${newXCResult}" <test-id>\n`;
+            message += `  • Export attachments: xcresult_export_attachment "${newXCResult}" <test-id> <index>\n`;
+            message += `  • Quick summary: xcresult_summary "${newXCResult}"`;
             
             return { content: [{ type: 'text', text: message }] };
           }
@@ -599,7 +616,11 @@ export class BuildTools {
           message += `  • Browse results: xcresult_browse "${newXCResult}"\n`;
           message += `  • Get console output: xcresult_browser_get_console "${newXCResult}" <test-id>\n`;
           message += `  • Get screenshots: xcresult_get_screenshot "${newXCResult}" <test-id> <timestamp>\n`;
-          message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id>`;
+          message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>\n`;
+          message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
+          message += `  • List attachments: xcresult_list_attachments "${newXCResult}" <test-id>\n`;
+          message += `  • Export attachments: xcresult_export_attachment "${newXCResult}" <test-id> <index>\n`;
+          message += `  • Quick summary: xcresult_summary "${newXCResult}"`;
           
           return { content: [{ type: 'text', text: message }] };
         }
