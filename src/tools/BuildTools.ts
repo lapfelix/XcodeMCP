@@ -604,10 +604,8 @@ export class BuildTools {
           message += `⚠️ ${testResult.error}\n\n`;
           message += `This is a known Xcode issue where the .xcresult file becomes corrupt even though Xcode reports test completion.\n\n`;
           message += `💡 Troubleshooting steps:\n`;
-          message += `  1. Try running the tests again\n`;
-          message += `  2. Clean the build folder (xcode_clean) and retry\n`;
-          message += `  3. Restart Xcode and retry\n`;
-          message += `  4. Delete DerivedData and retry\n\n`;
+          message += `  1. Restart Xcode and retry\n`;
+          message += `  2. Delete DerivedData and retry\n\n`;
           message += `The corrupt XCResult file is at:\n${newXCResult}`;
           
           return { content: [{ type: 'text', text: message }] };
