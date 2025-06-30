@@ -5,9 +5,133 @@ import { ErrorHelper } from '../utils/ErrorHelper.js';
 import type { McpResult, OpenProjectCallback } from '../types/index.js';
 
 export class ProjectTools {
+  public static async ensureXcodeIsRunning(): Promise<McpResult | null> {
+    // First check if Xcode is already running
+    const checkScript = `
+      (function() {
+        try {
+          const app = Application('Xcode');
+          if (app.running()) {
+            return 'Xcode is already running';
+          } else {
+            return 'Xcode is not running';
+          }
+        } catch (error) {
+          return 'Xcode is not running: ' + error.message;
+        }
+      })()
+    `;
+    
+    try {
+      const checkResult = await JXAExecutor.execute(checkScript);
+      if (checkResult.includes('already running')) {
+        return null; // All good, Xcode is running
+      }
+    } catch (error) {
+      // Continue to launch Xcode
+    }
+    
+    // Get the Xcode path from xcode-select
+    let xcodePath: string;
+    try {
+      const { spawn } = await import('child_process');
+      const xcodeSelectResult = await new Promise<string>((resolve, reject) => {
+        const process = spawn('xcode-select', ['-p']);
+        let stdout = '';
+        let stderr = '';
+        
+        process.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        process.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        process.on('close', (code) => {
+          if (code === 0) {
+            resolve(stdout.trim());
+          } else {
+            reject(new Error(`xcode-select failed with code ${code}: ${stderr}`));
+          }
+        });
+      });
+      
+      if (!xcodeSelectResult || xcodeSelectResult.trim() === '') {
+        return {
+          content: [{
+            type: 'text',
+            text: '❌ No Xcode installation found\n\n💡 To fix this:\n• Install Xcode from the Mac App Store\n• Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer'
+          }]
+        };
+      }
+      
+      // Convert from Developer path to app path
+      xcodePath = xcodeSelectResult.replace('/Contents/Developer', '');
+      
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: `❌ Failed to determine Xcode path: ${error instanceof Error ? error.message : String(error)}\n\n💡 Ensure Xcode is properly installed and xcode-select is configured`
+        }]
+      };
+    }
+    
+    // Launch Xcode
+    const launchScript = `
+      (function() {
+        try {
+          const app = Application(${JSON.stringify(xcodePath)});
+          app.launch();
+          
+          // Wait for Xcode to start
+          let attempts = 0;
+          while (!app.running() && attempts < 30) {
+            delay(1);
+            attempts++;
+          }
+          
+          if (app.running()) {
+            return 'Xcode launched successfully from ' + ${JSON.stringify(xcodePath)};
+          } else {
+            return 'Failed to launch Xcode - timed out after 30 seconds';
+          }
+        } catch (error) {
+          return 'Failed to launch Xcode: ' + error.message;
+        }
+      })()
+    `;
+    
+    try {
+      const launchResult = await JXAExecutor.execute(launchScript);
+      if (launchResult.includes('launched successfully')) {
+        return null; // Success
+      } else {
+        return {
+          content: [{
+            type: 'text',
+            text: `❌ ${launchResult}\n\n💡 Try:\n• Manually launching Xcode once\n• Checking Xcode installation\n• Ensuring sufficient system resources`
+          }]
+        };
+      }
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: `❌ Failed to launch Xcode: ${error instanceof Error ? error.message : String(error)}`
+        }]
+      };
+    }
+  }
+
   public static async openProject(projectPath: string): Promise<McpResult> {
     const validationError = PathValidator.validateProjectPath(projectPath);
     if (validationError) return validationError;
+    
+    // Ensure Xcode is running before trying to open project
+    const xcodeError = await this.ensureXcodeIsRunning();
+    if (xcodeError) return xcodeError;
     
     const script = `
       const app = Application('Xcode');
