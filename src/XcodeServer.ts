@@ -287,6 +287,14 @@ export class XcodeServer {
             },
           },
           {
+            name: 'xcode_close_project',
+            description: 'Close the currently active Xcode project or workspace (automatically stops any running actions first)',
+            inputSchema: {
+              type: 'object',
+              properties: {},
+            },
+          },
+          {
             name: 'xcode_build',
             description: 'Build a specific Xcode project or workspace with the specified scheme. If destination is not provided, uses the currently active destination.',
             inputSchema: {
@@ -709,6 +717,10 @@ export class XcodeServer {
               }
             }
             return result;
+          case 'xcode_close_project':
+            const closeResult = await ProjectTools.closeProject();
+            this.currentProjectPath = null;
+            return closeResult;
           case 'xcode_build':
             return await BuildTools.build(
               args.xcodeproj as string, 
@@ -834,11 +846,11 @@ export class XcodeServer {
   }
 
   public async openProject(projectPath: string): Promise<McpResult> {
-    const result = await ProjectTools.openProject(projectPath);
+    const result = await ProjectTools.openProjectAndWaitForLoad(projectPath);
     if (result && 'content' in result && result.content?.[0] && 'text' in result.content[0]) {
       const textContent = result.content[0];
       if (textContent.type === 'text' && typeof textContent.text === 'string') {
-        if (!textContent.text.includes('Error') && !textContent.text.includes('does not exist')) {
+        if (!textContent.text.includes('❌') && !textContent.text.includes('Error') && !textContent.text.includes('does not exist')) {
           this.currentProjectPath = projectPath;
         }
       }
