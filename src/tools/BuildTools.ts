@@ -1234,13 +1234,17 @@ export class BuildTools {
     `;
     
     try {
+      Logger.info('Running alert detection script...');
       const result = await JXAExecutor.execute(alertScript);
+      Logger.info(`Alert detection result: ${result}`);
       if (result && result !== 'No alert found') {
         Logger.info(`Alert handling: ${result}`);
+      } else {
+        Logger.info('No alerts detected');
       }
     } catch (error) {
       // Don't fail the main operation if alert handling fails
-      Logger.debug(`Alert handling failed: ${error instanceof Error ? error.message : String(error)}`);
+      Logger.info(`Alert handling failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }
