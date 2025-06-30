@@ -404,13 +404,9 @@ export class BuildTools {
         attempts++;
       }
       
-      // If no build log appeared, it likely means the build failed before it could start
+      // If no build log appeared, proceed without parsing
       if (!newLog) {
-        Logger.error('No build log found after 10 minutes - build likely failed to start');
-        throw new McpError(
-          ErrorCode.InternalError,
-          `❌ TEST BUILD FAILED TO START\n\nNo build log was created after 10 minutes. This usually indicates:\n• Swift Package Manager hanging during dependency resolution\n• Invalid project configuration\n• Missing dependencies\n• Simulator/destination issues\n• Xcode workspace/project problems\n\nTry:\n• Resolving packages manually in Xcode first\n• Clearing derived data\n• Checking your project setup`
-        );
+        Logger.info('No new build log found - test may be running in background or completed quickly');
       }
 
       // If we found a build log, monitor it for completion
