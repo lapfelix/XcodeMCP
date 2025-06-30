@@ -476,7 +476,58 @@ export class BuildTools {
       // Since build passed, we need to wait for the original test action to complete
       Logger.info('Build succeeded, waiting for test execution to complete...');
       
-      // First, try to find the xcresult file that will be created
+      // First, wait for Xcode to report that the test action has completed
+      Logger.info('Waiting for Xcode to report test completion...');
+      const waitForCompletionScript = `
+        (function() {
+          const app = Application('Xcode');
+          const workspace = app.activeWorkspaceDocument();
+          if (!workspace) throw new Error('No active workspace');
+          
+          // Find the test action by ID
+          const actionResult = workspace.schemeActionResults().find(result => result.id() === ${JSON.stringify(actionId)});
+          if (!actionResult) {
+            throw new Error('Could not find test action with ID: ' + ${JSON.stringify(actionId)});
+          }
+          
+          // Wait for action to complete
+          let attempts = 0;
+          const maxAttempts = 7200; // 2 hours max for test execution
+          
+          while (attempts < maxAttempts && !actionResult.completed()) {
+            delay(1); // 1 second
+            attempts++;
+          }
+          
+          if (attempts >= maxAttempts) {
+            throw new Error('Test execution timeout after 2 hours');
+          }
+          
+          // Get completion status
+          const status = actionResult.status ? actionResult.status() : 'unknown';
+          const error = actionResult.error ? actionResult.error() : null;
+          
+          return JSON.stringify({ 
+            completed: true,
+            status: status,
+            error: error,
+            duration: attempts
+          });
+        })()
+      `;
+      
+      let xcodeCompletion;
+      try {
+        const completionResult = await JXAExecutor.execute(waitForCompletionScript);
+        xcodeCompletion = JSON.parse(completionResult);
+        Logger.info(`Xcode reported test completion after ${xcodeCompletion.duration} seconds, status: ${xcodeCompletion.status}`);
+      } catch (error) {
+        Logger.warn(`Failed to wait for Xcode completion: ${error instanceof Error ? error.message : error}`);
+        // Continue anyway - we'll still look for the xcresult file
+        xcodeCompletion = { completed: true, status: 'unknown', error: null };
+      }
+      
+      // Now try to find the xcresult file that was created
       Logger.info('Looking for new xcresult file...');
       let newXCResult = await this._findNewXCResultFile(projectPath, initialXCResults, testStartTime);
       
@@ -493,63 +544,74 @@ export class BuildTools {
         }
       }
       
-      let testResult = { status: 'completed', error: undefined };
+      let testResult: { status: string, error: string | undefined } = { status: 'completed', error: undefined };
       
       if (newXCResult) {
-        Logger.info(`Found xcresult file: ${newXCResult}, waiting for test completion...`);
+        Logger.info(`Found xcresult file: ${newXCResult}, validating it's readable...`);
         
-        // Wait for the xcresult file to contain complete test results by trying to parse it
+        // Now that Xcode says tests are complete, wait up to 15 minutes for the xcresult to be readable
         let attempts = 0;
-        let lastParseAttempt = 0;
-        const maxAttempts = 43200; // 12 hours max - test execution should never timeout
+        const maxAttempts = 900; // 15 minutes (900 seconds)
+        let parseSuccess = false;
+        let lastParseError = null;
         
         while (attempts < maxAttempts) {
           try {
-            // Try to parse the xcresult file every 10 seconds to see if tests are complete
-            if (attempts % 10 === 0 || attempts - lastParseAttempt >= 10) {
-              lastParseAttempt = attempts;
-              
-              try {
-                Logger.debug(`Attempting to parse XCResult file (attempt ${Math.floor(attempts/10) + 1})...`);
-                const parser = new XCResultParser(newXCResult);
-                const analysis = await parser.analyzeXCResult();
-                
-                // If we can successfully parse and get test results, tests are likely complete
-                if (analysis && analysis.totalTests > 0) {
-                  Logger.info(`XCResult parsing successful! Found ${analysis.totalTests} tests, tests have completed`);
-                  break;
-                } else {
-                  Logger.info(`XCResult parsed but no test data yet (${analysis?.totalTests || 0} tests found)`);
-                }
-              } catch (parseError) {
-                Logger.debug(`XCResult not ready for parsing yet: ${parseError instanceof Error ? parseError.message : parseError}`);
-              }
+            Logger.debug(`Attempting to parse XCResult file (attempt ${attempts + 1}/${maxAttempts})...`);
+            const parser = new XCResultParser(newXCResult);
+            const analysis = await parser.analyzeXCResult();
+            
+            // If we can successfully parse and get test results, the file is valid
+            if (analysis && analysis.totalTests >= 0) {
+              Logger.info(`XCResult parsing successful! Found ${analysis.totalTests} tests`);
+              parseSuccess = true;
+              break;
             } else {
-              Logger.debug(`Waiting for next parse attempt... (${attempts % 10}/10)`);
+              Logger.debug(`XCResult parsed but incomplete (${analysis?.totalTests || 0} tests found)`);
+              lastParseError = 'Incomplete test data';
             }
-          } catch (error) {
-            Logger.debug(`Error checking xcresult file: ${error}`);
+          } catch (parseError) {
+            lastParseError = parseError;
+            Logger.debug(`XCResult not ready for parsing yet: ${parseError instanceof Error ? parseError.message : parseError}`);
           }
           
           await new Promise(resolve => setTimeout(resolve, 1000));
           attempts++;
         }
         
-        if (attempts >= maxAttempts) {
-          Logger.warn('XCResult file monitoring timeout, proceeding anyway');
-          testResult = { status: 'timeout', error: undefined };
+        if (!parseSuccess) {
+          Logger.error(`XCResult file appears to be corrupt after ${attempts} seconds`);
+          testResult = { 
+            status: 'failed', 
+            error: `Xcode reported test completion but the XCResult file is corrupt or unreadable after 15 minutes. This is likely an Xcode bug. Last parse error: ${lastParseError instanceof Error ? lastParseError.message : lastParseError}` 
+          };
         } else {
           testResult = { status: 'completed', error: undefined };
         }
       } else {
-        Logger.warn('No xcresult file found, falling back to fixed wait time');
-        // Fall back to waiting a fixed time
-        await new Promise(resolve => setTimeout(resolve, 30000)); // 30 seconds
-        testResult = { status: 'completed', error: undefined };
+        Logger.warn('No xcresult file found, test results unavailable');
+        testResult = { status: 'completed', error: 'No XCResult file found' };
       }
       
       if (newXCResult) {
         Logger.info(`Found xcresult: ${newXCResult}`);
+        
+        // Check if the xcresult file is corrupt
+        if (testResult.status === 'failed' && testResult.error) {
+          // XCResult file is corrupt
+          let message = `❌ XCODE BUG DETECTED${hasArgs ? ` (test with arguments ${JSON.stringify(commandLineArguments)})` : ''}\n\n`;
+          message += `XCResult Path: ${newXCResult}\n\n`;
+          message += `⚠️ ${testResult.error}\n\n`;
+          message += `This is a known Xcode issue where the .xcresult file becomes corrupt even though Xcode reports test completion.\n\n`;
+          message += `💡 Troubleshooting steps:\n`;
+          message += `  1. Try running the tests again\n`;
+          message += `  2. Clean the build folder (xcode_clean) and retry\n`;
+          message += `  3. Restart Xcode and retry\n`;
+          message += `  4. Delete DerivedData and retry\n\n`;
+          message += `The corrupt XCResult file is at:\n${newXCResult}`;
+          
+          return { content: [{ type: 'text', text: message }] };
+        }
         
         // We already confirmed the xcresult is readable in our completion detection loop
         // No need to wait again - proceed directly to analysis
