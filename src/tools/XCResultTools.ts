@@ -54,9 +54,13 @@ export class XCResultTools {
         usage += '  View test details: xcresult_browse <path> <test-id-or-index>\n';
         usage += '  View with console: xcresult_browse <path> <test-id-or-index> true\n';
         usage += '  Get console only: xcresult_browser_get_console <path> <test-id-or-index>\n';
+        usage += '  Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id-or-index> [timestamp]\n';
+        usage += '  Get screenshot: xcresult_get_screenshot <path> <test-id-or-index> <timestamp>\n';
         usage += '  Examples:\n';
         usage += `    xcresult_browse "${xcresultPath}" 5\n`;
         usage += `    xcresult_browse "${xcresultPath}" "SomeTest/testMethod()" true\n`;
+        usage += `    xcresult_get_ui_hierarchy "${xcresultPath}" 5 120.5\n`;
+        usage += `    xcresult_get_screenshot "${xcresultPath}" 5 120.5\n`;
         
         return { content: [{ type: 'text', text: testList + usage }] };
       }
