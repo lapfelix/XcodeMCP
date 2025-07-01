@@ -5,6 +5,27 @@ import { XcodeServer } from './XcodeServer.js';
 import { Logger } from './utils/Logger.js';
 import type { EnvironmentValidation } from './types/index.js';
 
+// Handle uncaught exceptions and unhandled promise rejections to prevent crashes
+process.on('uncaughtException', (error) => {
+  Logger.error('Uncaught exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  Logger.error('Unhandled promise rejection:', reason);
+  Logger.error('Promise:', promise);
+});
+
+process.on('SIGTERM', () => {
+  Logger.info('Received SIGTERM, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  Logger.info('Received SIGINT, shutting down gracefully');
+  process.exit(0);
+});
+
 export class XcodeMCPServer extends XcodeServer {
   public async start(): Promise<void> {
     try {

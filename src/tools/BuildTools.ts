@@ -1,6 +1,8 @@
 import { stat } from 'fs/promises';
 import { readdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
+import path from 'path';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { JXAExecutor } from '../utils/JXAExecutor.js';
 import { BuildLogParser } from '../utils/BuildLogParser.js';
@@ -534,7 +536,15 @@ export class BuildTools {
       
       let xcodeCompletion;
       try {
-        const completionResult = await JXAExecutor.execute(waitForCompletionScript);
+        // Add timeout to prevent hanging JXA scripts
+        const completionPromise = JXAExecutor.execute(waitForCompletionScript);
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Xcode completion check timed out after 10 minutes'));
+          }, 600000); // 10 minutes
+        });
+        
+        const completionResult = await Promise.race([completionPromise, timeoutPromise]);
         xcodeCompletion = JSON.parse(completionResult);
         Logger.info(`Xcode reported test completion after ${xcodeCompletion.duration} seconds, status: ${xcodeCompletion.status}`);
       } catch (error) {
@@ -565,17 +575,39 @@ export class BuildTools {
       if (newXCResult) {
         Logger.info(`Found xcresult file: ${newXCResult}, validating it's readable...`);
         
-        // Now that Xcode says tests are complete, wait up to 15 minutes for the xcresult to be readable
-        let attempts = 0;
-        const maxAttempts = 900; // 15 minutes (900 seconds)
-        let parseSuccess = false;
-        let lastParseError = null;
+        // First, wait for staging folder to disappear (indicates Xcode finished writing)
+        const stagingPath = path.join(newXCResult, 'staging');
+        let stagingAttempts = 0;
+        const maxStagingAttempts = 300; // 5 minutes for staging to complete
         
-        while (attempts < maxAttempts) {
-          try {
-            Logger.debug(`Attempting to parse XCResult file (attempt ${attempts + 1}/${maxAttempts})...`);
-            const parser = new XCResultParser(newXCResult);
-            const analysis = await parser.analyzeXCResult();
+        while (stagingAttempts < maxStagingAttempts) {
+          if (!existsSync(stagingPath)) {
+            Logger.info('XCResult staging complete, file is ready for reading');
+            break;
+          }
+          Logger.debug(`Staging folder still exists at ${stagingPath}, waiting... (${stagingAttempts + 1}/${maxStagingAttempts})`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          stagingAttempts++;
+        }
+        
+        if (existsSync(stagingPath)) {
+          Logger.error(`XCResult staging folder still exists after ${stagingAttempts} seconds`);
+          testResult = { 
+            status: 'failed', 
+            error: `XCResult file is still being written by Xcode after 5 minutes. The staging folder at ${stagingPath} still exists.` 
+          };
+        } else {
+          // Now that staging is complete, wait up to 15 minutes for the xcresult to be readable
+          let attempts = 0;
+          const maxAttempts = 900; // 15 minutes (900 seconds)
+          let parseSuccess = false;
+          let lastParseError = null;
+          
+          while (attempts < maxAttempts) {
+            try {
+              Logger.debug(`Attempting to parse XCResult file (attempt ${attempts + 1}/${maxAttempts})...`);
+              const parser = new XCResultParser(newXCResult);
+              const analysis = await parser.analyzeXCResult();
             
             // If we can successfully parse and get test results, the file is valid
             if (analysis && analysis.totalTests >= 0) {
@@ -595,14 +627,15 @@ export class BuildTools {
           attempts++;
         }
         
-        if (!parseSuccess) {
-          Logger.error(`XCResult file appears to be corrupt after ${attempts} seconds`);
-          testResult = { 
-            status: 'failed', 
-            error: `Xcode reported test completion but the XCResult file is corrupt or unreadable after 15 minutes. This is likely an Xcode bug. Last parse error: ${lastParseError instanceof Error ? lastParseError.message : lastParseError}` 
-          };
-        } else {
-          testResult = { status: 'completed', error: undefined };
+          if (!parseSuccess) {
+            Logger.error(`XCResult file appears to be corrupt after ${attempts} seconds`);
+            testResult = { 
+              status: 'failed', 
+              error: `Xcode reported test completion but the XCResult file is corrupt or unreadable after 15 minutes. This is likely an Xcode bug. Last parse error: ${lastParseError instanceof Error ? lastParseError.message : lastParseError}` 
+            };
+          } else {
+            testResult = { status: 'completed', error: undefined };
+          }
         }
       } else {
         Logger.warn('No xcresult file found, test results unavailable');

@@ -164,6 +164,16 @@ export class BuildLogParser {
       let stdout = '';
       let stderr = '';
       
+      // Ensure child process cleanup on exit
+      const cleanup = () => {
+        if (command && !command.killed) {
+          command.kill('SIGTERM');
+        }
+      };
+      process.once('exit', cleanup);
+      process.once('SIGTERM', cleanup);
+      process.once('SIGINT', cleanup);
+      
       command.stdout?.on('data', (data: Buffer) => {
         stdout += data.toString();
       });
@@ -173,6 +183,10 @@ export class BuildLogParser {
       });
       
       command.on('close', (code: number | null) => {
+        // Remove cleanup handlers once process closes
+        process.removeListener('exit', cleanup);
+        process.removeListener('SIGTERM', cleanup);
+        process.removeListener('SIGINT', cleanup);
         if (code !== 0) {
           const errorMessage = stderr.trim() || 'No error details available';
           
