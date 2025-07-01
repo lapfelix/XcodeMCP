@@ -578,7 +578,7 @@ export class BuildTools {
         // First, wait for staging folder to disappear (indicates Xcode finished writing)
         const stagingPath = path.join(newXCResult, 'staging');
         let stagingAttempts = 0;
-        const maxStagingAttempts = 300; // 5 minutes for staging to complete
+        const maxStagingAttempts = 900; // 15 minutes for staging to complete
         
         while (stagingAttempts < maxStagingAttempts) {
           if (!existsSync(stagingPath)) {
@@ -594,7 +594,7 @@ export class BuildTools {
           Logger.error(`XCResult staging folder still exists after ${stagingAttempts} seconds`);
           testResult = { 
             status: 'failed', 
-            error: `XCResult file is still being written by Xcode after 5 minutes. The staging folder at ${stagingPath} still exists.` 
+            error: `XCResult file is still being written by Xcode after 15 minutes. The staging folder at ${stagingPath} still exists. This indicates an Xcode bug or extremely large test results.` 
           };
         } else {
           // Now that staging is complete, wait up to 15 minutes for the xcresult to be readable
