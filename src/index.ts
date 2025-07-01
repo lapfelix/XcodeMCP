@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { createServer } from 'http';
 import { XcodeServer } from './XcodeServer.js';
 import { Logger } from './utils/Logger.js';
 import type { EnvironmentValidation } from './types/index.js';
@@ -27,7 +29,7 @@ process.on('SIGINT', () => {
 });
 
 export class XcodeMCPServer extends XcodeServer {
-  public async start(): Promise<void> {
+  public async start(port?: number): Promise<void> {
     try {
       // Initialize logging system
       Logger.info('Starting server and validating environment...');
@@ -49,9 +51,83 @@ export class XcodeMCPServer extends XcodeServer {
         Logger.info('Environment validation passed - all systems operational');
       }
 
-      const transport = new StdioServerTransport();
-      await this.server.connect(transport);
-      Logger.info('Server started successfully on stdio');
+      if (port) {
+        // Store active SSE transports by session ID
+        const sseTransports = new Map<string, SSEServerTransport>();
+        
+        // Create HTTP server for SSE transport
+        const httpServer = createServer(async (req, res) => {
+          const url = new URL(req.url!, `http://localhost:${port}`);
+          
+          if (req.method === 'GET' && url.pathname === '/sse') {
+            // Handle SSE connection
+            const transport = new SSEServerTransport('/message', res);
+            await this.server.connect(transport);
+            
+            // Store the transport by session ID
+            sseTransports.set(transport.sessionId, transport);
+            Logger.info(`SSE connection established with session ID: ${transport.sessionId}`);
+            
+            // Clean up when connection closes
+            transport.onclose = () => {
+              sseTransports.delete(transport.sessionId);
+              Logger.info(`SSE connection closed for session: ${transport.sessionId}`);
+            };
+            
+          } else if (req.method === 'POST' && url.pathname === '/message') {
+            // Handle POST messages - route to the correct transport
+            const sessionId = url.searchParams.get('sessionId');
+            
+            if (!sessionId) {
+              res.writeHead(400, { 'Content-Type': 'text/plain' });
+              res.end('Missing sessionId parameter');
+              return;
+            }
+            
+            const transport = sseTransports.get(sessionId);
+            if (!transport) {
+              res.writeHead(404, { 'Content-Type': 'text/plain' });
+              res.end('Session not found. Please establish SSE connection first.');
+              return;
+            }
+            
+            try {
+              await transport.handlePostMessage(req, res);
+            } catch (error) {
+              Logger.error('Error handling POST message:', error);
+              if (!res.headersSent) {
+                res.writeHead(500, { 'Content-Type': 'text/plain' });
+                res.end('Internal server error');
+              }
+            }
+            
+          } else if (req.method === 'GET' && url.pathname === '/') {
+            // Simple status page
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ 
+              status: 'XcodeMCP server running',
+              activeSessions: sseTransports.size,
+              endpoints: {
+                sse: '/sse',
+                message: '/message'
+              }
+            }));
+          } else {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Not found');
+          }
+        });
+
+        httpServer.listen(port, () => {
+          Logger.info(`Server started successfully on port ${port} with SSE transport`);
+          Logger.info(`SSE endpoint: http://localhost:${port}/sse`);
+          Logger.info(`Status page: http://localhost:${port}/`);
+        });
+      } else {
+        const transport = new StdioServerTransport();
+        await this.server.connect(transport);
+        Logger.info('Server started successfully on stdio');
+      }
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -60,6 +136,9 @@ export class XcodeMCPServer extends XcodeServer {
       
       try {
         // Attempt to start in minimal mode without validation
+        if (port) {
+          Logger.warn('Minimal mode does not support HTTP/SSE - falling back to stdio');
+        }
         const transport = new StdioServerTransport();
         await this.server.connect(transport);
         Logger.warn('Server started in minimal mode (validation failed)');
@@ -77,7 +156,13 @@ export class XcodeMCPServer extends XcodeServer {
 // Only run if not in test environment
 if (process.env.NODE_ENV !== 'test') {
   const server = new XcodeMCPServer();
-  server.start().catch(async (error: unknown) => {
+  
+  // Check for port argument
+  const portArg = process.argv.find(arg => arg.startsWith('--port='));
+  const portValue = portArg?.split('=')[1];
+  const port = portValue ? parseInt(portValue, 10) : undefined;
+  
+  server.start(port).catch(async (error: unknown) => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     Logger.error('Server startup failed:', errorMessage);
     await Logger.flush();
