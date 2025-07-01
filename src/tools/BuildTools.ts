@@ -442,10 +442,26 @@ export class BuildTools {
                       message += `  • ${error}\n`;
                       Logger.error('Test build error:', error);
                     });
+                    
+                    // Also include warnings if present
+                    if (results.warnings.length > 0) {
+                      message += `\n⚠️ WARNINGS (${results.warnings.length}):\n`;
+                      results.warnings.forEach(warning => {
+                        message += `  • ${warning}\n`;
+                        Logger.warn('Test build warning:', warning);
+                      });
+                    }
+                    
                     throw new McpError(
                       ErrorCode.InternalError,
                       message
                     );
+                  } else if (results.warnings.length > 0) {
+                    // Build succeeded but has warnings - log them but continue
+                    Logger.warn(`Test build completed with ${results.warnings.length} warnings`);
+                    results.warnings.forEach(warning => {
+                      Logger.warn('Test build warning:', warning);
+                    });
                   }
                   
                   break;
