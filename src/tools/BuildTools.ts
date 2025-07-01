@@ -675,26 +675,26 @@ export class BuildTools {
             const analysis = await parser.analyzeXCResult();
             if (analysis.failedTests > 0) {
               message += `💡 Inspect test results:\n`;
-              message += `  • Browse results: xcresult_browse "${newXCResult}"\n`;
-              message += `  • Get console output: xcresult_browser_get_console "${newXCResult}" <test-id>\n`;
-              message += `  • Get screenshots: xcresult_get_screenshot "${newXCResult}" <test-id> <timestamp>\n`;
-              message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>\n`;
+              message += `  • Browse results: xcresult_browse <path>\n`;
+              message += `  • Get console output: xcresult_browser_get_console <path> <test-id>\n`;
+              message += `  • Get screenshots: xcresult_get_screenshot <path> <test-id> <timestamp>\n`;
+              message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id> <timestamp>\n`;
               message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
-              message += `  • List attachments: xcresult_list_attachments "${newXCResult}" <test-id>\n`;
-              message += `  • Export attachments: xcresult_export_attachment "${newXCResult}" <test-id> <index>\n`;
-              message += `  • Quick summary: xcresult_summary "${newXCResult}"\n`;
+              message += `  • List attachments: xcresult_list_attachments <path> <test-id>\n`;
+              message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
+              message += `  • Quick summary: xcresult_summary <path>\n`;
               message += `\n💡 Tip: Use console output to find failure timestamps for screenshots and UI hierarchies`;
             } else {
               message += `✅ All tests passed!\n\n`;
               message += `💡 Explore test results:\n`;
-              message += `  • Browse results: xcresult_browse "${newXCResult}"\n`;
-              message += `  • Get console output: xcresult_browser_get_console "${newXCResult}" <test-id>\n`;
-              message += `  • Get screenshots: xcresult_get_screenshot "${newXCResult}" <test-id> <timestamp>\n`;
-              message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>\n`;
+              message += `  • Browse results: xcresult_browse <path>\n`;
+              message += `  • Get console output: xcresult_browser_get_console <path> <test-id>\n`;
+              message += `  • Get screenshots: xcresult_get_screenshot <path> <test-id> <timestamp>\n`;
+              message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id> <timestamp>\n`;
               message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
-              message += `  • List attachments: xcresult_list_attachments "${newXCResult}" <test-id>\n`;
-              message += `  • Export attachments: xcresult_export_attachment "${newXCResult}" <test-id> <index>\n`;
-              message += `  • Quick summary: xcresult_summary "${newXCResult}"`;
+              message += `  • List attachments: xcresult_list_attachments <path> <test-id>\n`;
+              message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
+              message += `  • Quick summary: xcresult_summary <path>`;
             }
             
             return { content: [{ type: 'text', text: message }] };
@@ -706,14 +706,14 @@ export class BuildTools {
             message += `Status: ${testResult.status}\n\n`;
             message += `Note: XCResult parsing failed, but test file is available for manual inspection.\n\n`;
             message += `💡 Inspect test results:\n`;
-            message += `  • Browse results: xcresult_browse "${newXCResult}"\n`;
-            message += `  • Get console output: xcresult_browser_get_console "${newXCResult}" <test-id>\n`;
-            message += `  • Get screenshots: xcresult_get_screenshot "${newXCResult}" <test-id> <timestamp>\n`;
-            message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>\n`;
+            message += `  • Browse results: xcresult_browse <path>\n`;
+            message += `  • Get console output: xcresult_browser_get_console <path> <test-id>\n`;
+            message += `  • Get screenshots: xcresult_get_screenshot <path> <test-id> <timestamp>\n`;
+            message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id> <timestamp>\n`;
             message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
-            message += `  • List attachments: xcresult_list_attachments "${newXCResult}" <test-id>\n`;
-            message += `  • Export attachments: xcresult_export_attachment "${newXCResult}" <test-id> <index>\n`;
-            message += `  • Quick summary: xcresult_summary "${newXCResult}"`;
+            message += `  • List attachments: xcresult_list_attachments <path> <test-id>\n`;
+            message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
+            message += `  • Quick summary: xcresult_summary <path>`;
             
             return { content: [{ type: 'text', text: message }] };
           }
@@ -724,14 +724,14 @@ export class BuildTools {
           message += `Status: ${testResult.status}\n\n`;
           message += `⚠️ Test completion detection timed out, but XCResult file is available.\n\n`;
           message += `💡 Inspect test results:\n`;
-          message += `  • Browse results: xcresult_browse "${newXCResult}"\n`;
-          message += `  • Get console output: xcresult_browser_get_console "${newXCResult}" <test-id>\n`;
-          message += `  • Get screenshots: xcresult_get_screenshot "${newXCResult}" <test-id> <timestamp>\n`;
-          message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy "${newXCResult}" <test-id> <timestamp>\n`;
+          message += `  • Browse results: xcresult_browse <path>\n`;
+          message += `  • Get console output: xcresult_browser_get_console <path> <test-id>\n`;
+          message += `  • Get screenshots: xcresult_get_screenshot <path> <test-id> <timestamp>\n`;
+          message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id> <timestamp>\n`;
           message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
-          message += `  • List attachments: xcresult_list_attachments "${newXCResult}" <test-id>\n`;
-          message += `  • Export attachments: xcresult_export_attachment "${newXCResult}" <test-id> <index>\n`;
-          message += `  • Quick summary: xcresult_summary "${newXCResult}"`;
+          message += `  • List attachments: xcresult_list_attachments <path> <test-id>\n`;
+          message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
+          message += `  • Quick summary: xcresult_summary <path>`;
           
           return { content: [{ type: 'text', text: message }] };
         }
