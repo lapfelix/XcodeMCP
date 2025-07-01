@@ -510,7 +510,7 @@ export class BuildTools {
           
           // Wait for action to complete
           let attempts = 0;
-          const maxAttempts = 7200; // 2 hours max for test execution
+          const maxAttempts = 43200; // 12 hours max for test execution
           
           while (attempts < maxAttempts && !actionResult.completed()) {
             delay(1); // 1 second
@@ -518,7 +518,7 @@ export class BuildTools {
           }
           
           if (attempts >= maxAttempts) {
-            throw new Error('Test execution timeout after 2 hours');
+            throw new Error('Test execution timeout after 12 hours');
           }
           
           // Get completion status
