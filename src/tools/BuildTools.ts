@@ -1089,18 +1089,20 @@ export class BuildTools {
       attempts++;
     }
     
-    // If no new file found, be strict - only return files created very recently
+    // If no new file found, look for files created AFTER test start time
     const allFiles = await this._findXCResultFiles(projectPath);
-    if (allFiles.length > 0) {
+    
+    // Find files created after the test started (not just within the timeframe)
+    const filesAfterTestStart = allFiles.filter(file => file.mtime > testStartTime);
+    
+    if (filesAfterTestStart.length > 0) {
+      // Return the newest file that was created after the test started
+      const mostRecentAfterTest = filesAfterTestStart[0]; // Already sorted newest first
+      Logger.warn(`Using most recent xcresult file created after test start: ${mostRecentAfterTest.path}`);
+      return mostRecentAfterTest.path;
+    } else if (allFiles.length > 0) {
       const mostRecent = allFiles[0];
-      
-      // Only use files created within 2 minutes of test start (much stricter)
-      if (mostRecent && mostRecent.mtime >= testStartTime - 120000) {
-        Logger.warn(`Using most recent xcresult file within test timeframe: ${mostRecent.path}`);
-        return mostRecent.path;
-      } else if (mostRecent) {
-        Logger.debug(`Most recent file too old: ${mostRecent.path}, mtime: ${new Date(mostRecent.mtime)}, test start: ${new Date(testStartTime)}`);
-      }
+      Logger.debug(`Most recent file too old: ${mostRecent.path}, mtime: ${new Date(mostRecent.mtime)}, test start: ${new Date(testStartTime)}`);
     }
     
     return null;
