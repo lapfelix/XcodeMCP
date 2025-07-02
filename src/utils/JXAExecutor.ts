@@ -8,29 +8,59 @@ export class JXAExecutor {
    */
   public static async execute(script: string): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      const osascript: ChildProcess = spawn('osascript', ['-l', 'JavaScript', '-e', script]);
-      let stdout = '';
-      let stderr = '';
+      try {
+        const osascript: ChildProcess = spawn('osascript', ['-l', 'JavaScript', '-e', script]);
+        let stdout = '';
+        let stderr = '';
 
-      osascript.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
+        // Add cleanup handlers to prevent process leaks
+        const cleanup = () => {
+          if (osascript && !osascript.killed) {
+            try {
+              osascript.kill('SIGTERM');
+            } catch (killError) {
+              // Ignore kill errors
+            }
+          }
+        };
 
-      osascript.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
+        // Set a timeout to prevent hanging
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('JXA execution timed out after 30 seconds'));
+        }, 30000);
 
-      osascript.on('close', (code: number | null) => {
-        if (code !== 0) {
-          reject(new Error(`JXA execution failed: ${stderr}`));
-        } else {
-          resolve(stdout.trim());
-        }
-      });
+        osascript.stdout?.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
 
-      osascript.on('error', (error: Error) => {
-        reject(new Error(`Failed to spawn osascript: ${error.message}`));
-      });
+        osascript.stderr?.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+
+        osascript.on('close', (code: number | null) => {
+          clearTimeout(timeout);
+          try {
+            if (code !== 0) {
+              reject(new Error(`JXA execution failed: ${stderr}`));
+            } else {
+              resolve(stdout.trim());
+            }
+          } catch (handlerError) {
+            // Prevent any handler errors from crashing
+            reject(new Error(`JXA handler error: ${handlerError}`));
+          }
+        });
+
+        osascript.on('error', (error: Error) => {
+          clearTimeout(timeout);
+          cleanup();
+          reject(new Error(`Failed to spawn osascript: ${error.message}`));
+        });
+
+      } catch (spawnError) {
+        reject(new Error(`Failed to create JXA process: ${spawnError}`));
+      }
     });
   }
 }

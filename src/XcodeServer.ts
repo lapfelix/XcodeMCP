@@ -718,9 +718,16 @@ export class XcodeServer {
             }
             return result;
           case 'xcode_close_project':
-            const closeResult = await ProjectTools.closeProject();
-            this.currentProjectPath = null;
-            return closeResult;
+            try {
+              const closeResult = await ProjectTools.closeProject();
+              this.currentProjectPath = null;
+              return closeResult;
+            } catch (closeError) {
+              // Ensure close project never crashes the server
+              Logger.error('Close project error (handled):', closeError);
+              this.currentProjectPath = null;
+              return { content: [{ type: 'text', text: 'Project close attempted - may have completed with dialogs' }] };
+            }
           case 'xcode_build':
             return await BuildTools.build(
               args.xcodeproj as string, 
