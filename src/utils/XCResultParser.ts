@@ -115,7 +115,7 @@ export class XCResultParser {
     
     // Phase 1: Wait for staging folder to disappear
     Logger.info('Phase 1: Waiting for staging folder to disappear...');
-    const stagingPath = `${xcresultPath}/staging`;
+    const stagingPath = `${xcresultPath}/Staging`;
     while (Date.now() - startTime < timeoutMs) {
       if (!existsSync(stagingPath)) {
         Logger.info('Staging folder has disappeared');

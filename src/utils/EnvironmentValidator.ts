@@ -277,14 +277,48 @@ export class EnvironmentValidator {
   }
 
   /**
+   * Get the actual Xcode application path
+   */
+  private static async getXcodePath(): Promise<string> {
+    try {
+      // First try to get from xcode-select
+      const developerDir = await this.executeCommand('xcode-select', ['-p']);
+      const xcodeAppPath = developerDir.trim().replace('/Contents/Developer', '');
+      
+      // Verify this Xcode app exists
+      await this.executeCommand('test', ['-d', xcodeAppPath]);
+      return xcodeAppPath;
+    } catch {
+      // Fall back to searching /Applications for any Xcode app
+      try {
+        const result = await this.executeCommand('find', ['/Applications', '-name', 'Xcode*.app', '-type', 'd', '-maxdepth', '1']);
+        const xcodePaths = result.trim().split('\n').filter(path => path.length > 0);
+        
+        if (xcodePaths.length > 0 && xcodePaths[0]) {
+          // Return the first Xcode found
+          return xcodePaths[0];
+        }
+      } catch {
+        // Last resort - try the standard path
+        return '/Applications/Xcode.app';
+      }
+    }
+    
+    return '/Applications/Xcode.app';
+  }
+
+  /**
    * Validates automation permissions
    */
   private static async validatePermissions(): Promise<EnvironmentValidationResult> {
     try {
-      // Try a simple Xcode automation command to test permissions
+      // Get the actual Xcode path first
+      const xcodePath = await this.getXcodePath();
+      
+      // Try a simple Xcode automation command to test permissions using the actual path
       const result = await this.executeCommand('osascript', [
         '-l', 'JavaScript', '-e',
-        'Application("Xcode").version()'
+        `Application("${xcodePath}").version()`
       ]);
       
       if (result && result.trim()) {

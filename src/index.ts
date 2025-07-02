@@ -7,15 +7,21 @@ import { XcodeServer } from './XcodeServer.js';
 import { Logger } from './utils/Logger.js';
 import type { EnvironmentValidation } from './types/index.js';
 
-// Handle uncaught exceptions and unhandled promise rejections to prevent crashes
+// Handle uncaught exceptions and unhandled promise rejections 
 process.on('uncaughtException', (error) => {
-  Logger.error('Uncaught exception:', error);
-  process.exit(1);
+  Logger.error('🚨 UNCAUGHT EXCEPTION - This may indicate a bug that needs fixing:', error);
+  Logger.error('Stack trace:', error.stack);
+  // Log to stderr as well for visibility
+  console.error('🚨 XcodeMCP: Uncaught exception detected:', error.message);
+  // Don't exit immediately - log and continue for MCP server stability
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  Logger.error('Unhandled promise rejection:', reason);
+  Logger.error('🚨 UNHANDLED PROMISE REJECTION - This may indicate a bug that needs fixing:', reason);
   Logger.error('Promise:', promise);
+  // Log to stderr as well for visibility
+  console.error('🚨 XcodeMCP: Unhandled promise rejection:', reason);
+  // Don't exit - log and continue
 });
 
 process.on('SIGTERM', () => {

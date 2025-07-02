@@ -343,6 +343,7 @@ export class BuildTools {
     // Get initial xcresult files to detect new ones
     const initialXCResults = await this._findXCResultFiles(projectPath);
     const testStartTime = Date.now();
+    Logger.info(`Test start time: ${new Date(testStartTime).toISOString()}, found ${initialXCResults.length} initial XCResult files`);
 
     // Start monitoring for build log immediately
     const buildStartTime = Date.now();
@@ -381,7 +382,7 @@ export class BuildTools {
       
       let attempts = 0;
       let newLog = null;
-      const initialWaitAttempts = 600; // Increased to 10 minutes for Swift Package resolution
+      const initialWaitAttempts = 10; // Wait only 10 seconds for build log - tests often run without rebuilding
 
       while (attempts < initialWaitAttempts) {
         const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
@@ -508,7 +509,7 @@ export class BuildTools {
           
           // Wait for action to complete
           let attempts = 0;
-          const maxAttempts = 43200; // 12 hours max for test execution
+          const maxAttempts = 30; // 30 seconds max for test execution - if no completion, proceed anyway
           
           while (attempts < maxAttempts && !actionResult.completed()) {
             delay(1); // 1 second
@@ -552,12 +553,23 @@ export class BuildTools {
       if (!newXCResult) {
         Logger.info('No xcresult file found yet, waiting for it to appear...');
         let attempts = 0;
-        const maxWaitAttempts = 60; // 1 minute to find the file after test completion
+        const maxWaitAttempts = 15; // 15 seconds to find the file after test completion
         
         while (attempts < maxWaitAttempts && !newXCResult) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           newXCResult = await this._findNewXCResultFile(projectPath, initialXCResults, testStartTime);
           attempts++;
+        }
+        
+        // If still no XCResult found, the test likely didn't run at all
+        if (!newXCResult) {
+          Logger.warn('No XCResult file found - test may not have run or current scheme has no tests');
+          return { 
+            content: [{ 
+              type: 'text', 
+              text: `⚠️ TEST EXECUTION UNCLEAR\n\nNo XCResult file was created, which suggests:\n• The current scheme may not have test targets configured\n• Tests may have been skipped\n• There may be configuration issues\n\n💡 Try:\n• Use a scheme with test targets (look for schemes ending in '-Tests')\n• Check that the project has test targets configured\n• Run tests manually in Xcode first to verify setup\n\nAvailable schemes: Use 'xcode_get_schemes' to see all schemes` 
+            }] 
+          };
         }
       }
       
@@ -568,7 +580,7 @@ export class BuildTools {
         
         // Use the robust waiting method that checks for staging disappearance,
         // file presence, size stabilization, and reading with retries
-        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, 180000); // 3 minutes
+        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, 30000); // 30 seconds
         
         if (isReady) {
           // File is ready, verify analysis works
@@ -1045,7 +1057,9 @@ export class BuildTools {
           Logger.info(`Found new xcresult file: ${file.path}, mtime: ${new Date(file.mtime)}, test start: ${new Date(testStartTime)}`);
           return file.path;
         } else if (!wasInitialFile) {
-          Logger.debug(`Found xcresult file but too old: ${file.path}, mtime: ${new Date(file.mtime)}, test start: ${new Date(testStartTime)}`);
+          Logger.warn(`Found xcresult file but too old: ${file.path}, mtime: ${new Date(file.mtime)}, test start: ${new Date(testStartTime)}, diff: ${file.mtime - testStartTime}ms`);
+        } else {
+          Logger.debug(`Skipping initial file: ${file.path}, mtime: ${new Date(file.mtime)}`);
         }
       }
       
@@ -1167,7 +1181,21 @@ export class BuildTools {
               const sheets = window.sheets();
               if (sheets && sheets.length > 0) {
                 const sheet = sheets[0];
+                console.log('Found sheet in window ' + i);
                 const buttons = sheet.buttons();
+                console.log('Sheet has ' + buttons.length + ' buttons');
+                
+                // Log all button names to understand what's available
+                const buttonNames = [];
+                for (let j = 0; j < buttons.length; j++) {
+                  try {
+                    const buttonName = buttons[j].name();
+                    buttonNames.push(buttonName);
+                  } catch (e) {
+                    buttonNames.push('(unnamed)');
+                  }
+                }
+                console.log('Button names: ' + JSON.stringify(buttonNames));
                 
                 // Look for "Replace" button or similar confirmation buttons
                 for (let j = 0; j < buttons.length; j++) {
@@ -1178,11 +1206,12 @@ export class BuildTools {
                     buttonName.toLowerCase().includes('replace') ||
                     buttonName.toLowerCase().includes('stop') ||
                     buttonName.toLowerCase() === 'ok' ||
-                    buttonName.toLowerCase() === 'yes'
+                    buttonName.toLowerCase() === 'yes' ||
+                    buttonName.toLowerCase() === 'continue'
                   )) {
                     button.click();
                     alertHandled = true;
-                    return 'Alert handled: clicked ' + buttonName;
+                    return 'Alert handled: clicked ' + buttonName + ' (from buttons: ' + JSON.stringify(buttonNames) + ')';
                   }
                 }
               }
