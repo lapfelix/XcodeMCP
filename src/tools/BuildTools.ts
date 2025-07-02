@@ -1,8 +1,6 @@
 import { stat } from 'fs/promises';
 import { readdir } from 'fs/promises';
-import { existsSync } from 'fs';
 import { join } from 'path';
-import path from 'path';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { JXAExecutor } from '../utils/JXAExecutor.js';
 import { BuildLogParser } from '../utils/BuildLogParser.js';
@@ -566,34 +564,16 @@ export class BuildTools {
       let testResult: { status: string, error: string | undefined } = { status: 'completed', error: undefined };
       
       if (newXCResult) {
-        Logger.info(`Found xcresult file: ${newXCResult}, waiting for Xcode to finish writing it...`);
+        Logger.info(`Found xcresult file: ${newXCResult}, waiting for it to be fully written...`);
         
-        // Wait for staging folder to disappear (indicates Xcode finished writing)
-        // 15 minutes should be plenty for file I/O after tests are complete
-        const stagingPath = path.join(newXCResult, 'staging');
-        let stagingAttempts = 0;
-        const maxStagingAttempts = 900; // 15 minutes for staging to complete
+        // Use the robust waiting method that checks for staging disappearance,
+        // file presence, size stabilization, and reading with retries
+        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, 180000); // 3 minutes
         
-        while (stagingAttempts < maxStagingAttempts) {
-          if (!existsSync(stagingPath)) {
-            Logger.info('XCResult staging complete, file is ready for reading');
-            break;
-          }
-          Logger.debug(`Staging folder still exists at ${stagingPath}, waiting... (${stagingAttempts + 1}/${maxStagingAttempts})`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          stagingAttempts++;
-        }
-        
-        if (existsSync(stagingPath)) {
-          Logger.error(`XCResult staging folder still exists after ${stagingAttempts} seconds`);
-          testResult = { 
-            status: 'failed', 
-            error: `XCResult file is still being written by Xcode after 15 minutes. The staging folder at ${stagingPath} still exists. This indicates an Xcode bug or extremely large test results.` 
-          };
-        } else {
-          // Staging is complete, verify the file is readable
+        if (isReady) {
+          // File is ready, verify analysis works
           try {
-            Logger.info('Verifying XCResult file is readable...');
+            Logger.info('XCResult file is ready, performing final verification...');
             const parser = new XCResultParser(newXCResult);
             const analysis = await parser.analyzeXCResult();
           
@@ -614,6 +594,12 @@ export class BuildTools {
               error: `XCResult file is corrupt or unreadable. This is likely an Xcode bug. Parse error: ${parseError instanceof Error ? parseError.message : parseError}` 
             };
           }
+        } else {
+          Logger.error('XCResult file failed to become ready within 3 minutes');
+          testResult = { 
+            status: 'failed', 
+            error: `XCResult file failed to become readable within 3 minutes despite multiple verification attempts. This indicates an Xcode bug where the file remains corrupt or incomplete.` 
+          };
         }
       } else {
         Logger.warn('No xcresult file found after test completion');

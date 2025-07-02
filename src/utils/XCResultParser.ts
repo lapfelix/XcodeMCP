@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
+import { stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Logger } from './Logger.js';
@@ -106,26 +107,132 @@ export class XCResultParser {
   }
 
   /**
-   * Wait for xcresult to be fully written and readable
+   * Wait for xcresult to be fully written and readable with robust checks
    */
-  public static async waitForXCResultReadiness(xcresultPath: string, timeoutMs: number = 60000): Promise<boolean> {
+  public static async waitForXCResultReadiness(xcresultPath: string, timeoutMs: number = 180000): Promise<boolean> {
     const startTime = Date.now();
+    Logger.info(`Starting robust XCResult readiness check for: ${xcresultPath}`);
     
+    // Phase 1: Wait for staging folder to disappear
+    Logger.info('Phase 1: Waiting for staging folder to disappear...');
+    const stagingPath = `${xcresultPath}/staging`;
     while (Date.now() - startTime < timeoutMs) {
-      if (this.isXCResultReadable(xcresultPath)) {
-        // Additional check: try to run a simple xcresulttool command
-        try {
-          await XCResultParser.runXCResultTool(['get', 'summary', '--path', xcresultPath, '--format', 'json'], 5000);
-          Logger.info(`XCResult is ready: ${xcresultPath}`);
-          return true;
-        } catch (error) {
-          // Not ready yet, continue waiting
-        }
+      if (!existsSync(stagingPath)) {
+        Logger.info('Staging folder has disappeared');
+        break;
       }
-      
+      Logger.debug(`Staging folder still exists: ${stagingPath}`);
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
+    if (existsSync(stagingPath)) {
+      Logger.warn('Staging folder still exists after timeout');
+      return false;
+    }
+    
+    // Phase 2: Wait for essential files to appear
+    Logger.info('Phase 2: Waiting for essential XCResult files to appear...');
+    const infoPlistPath = `${xcresultPath}/Info.plist`;
+    const databasePath = `${xcresultPath}/database.sqlite3`;
+    const dataPath = `${xcresultPath}/Data`;
+    
+    while (Date.now() - startTime < timeoutMs) {
+      const hasInfoPlist = existsSync(infoPlistPath);
+      const hasDatabase = existsSync(databasePath);
+      const hasData = existsSync(dataPath);
+      
+      if (hasInfoPlist && hasDatabase && hasData) {
+        Logger.info('All essential XCResult files are present');
+        break;
+      }
+      
+      Logger.debug(`XCResult files status - Info.plist: ${hasInfoPlist ? '✓' : '✗'}, database.sqlite3: ${hasDatabase ? '✓' : '✗'}, Data: ${hasData ? '✓' : '✗'}`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    if (!existsSync(infoPlistPath) || !existsSync(databasePath) || !existsSync(dataPath)) {
+      Logger.warn('Not all essential XCResult files appeared within timeout');
+      return false;
+    }
+    
+    // Phase 3: Wait for file sizes to stabilize
+    Logger.info('Phase 3: Waiting for file sizes to stabilize...');
+    let previousSizes: Record<string, number> = {};
+    let stableCount = 0;
+    const requiredStableChecks = 3; // Must be stable for 3 consecutive checks
+    
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const infoPlistStats = await stat(infoPlistPath);
+        const databaseStats = await stat(databasePath);
+        const dataStats = await stat(dataPath);
+        
+        const currentSizes = {
+          infoPlist: infoPlistStats.size,
+          database: databaseStats.size,
+          data: dataStats.size
+        };
+        
+        const sizesMatch = (
+          previousSizes.infoPlist === currentSizes.infoPlist &&
+          previousSizes.database === currentSizes.database &&
+          previousSizes.data === currentSizes.data
+        );
+        
+        if (sizesMatch && Object.keys(previousSizes).length > 0) {
+          stableCount++;
+          Logger.debug(`File sizes stable for ${stableCount}/${requiredStableChecks} checks`);
+          
+          if (stableCount >= requiredStableChecks) {
+            Logger.info('File sizes have stabilized');
+            break;
+          }
+        } else {
+          stableCount = 0;
+          Logger.debug(`File sizes changed - Info.plist: ${currentSizes.infoPlist}, database: ${currentSizes.database}, Data: ${currentSizes.data}`);
+        }
+        
+        previousSizes = currentSizes;
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Check every 2 seconds
+      } catch (error) {
+        Logger.debug(`Error checking file sizes: ${error}`);
+        stableCount = 0;
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    
+    // Add artificial delay after stabilization for extra safety
+    Logger.info('Adding 10-second safety delay after stabilization...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    
+    // Phase 4: Attempt to read with retries
+    Logger.info('Phase 4: Attempting to read XCResult with retries...');
+    const maxRetries = 9; // Up to 9 retries (total 10 attempts)
+    const retryDelay = 10000; // 10 seconds between retries
+    
+    for (let attempt = 0; attempt < maxRetries + 1; attempt++) {
+      try {
+        Logger.info(`Reading attempt ${attempt + 1}/${maxRetries + 1}...`);
+        await XCResultParser.runXCResultTool(['get', 'summary', '--path', xcresultPath, '--format', 'json'], 15000);
+        Logger.info(`XCResult is ready after ${attempt + 1} attempts: ${xcresultPath}`);
+        return true;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        Logger.warn(`Reading attempt ${attempt + 1} failed: ${errorMessage}`);
+        
+        if (attempt < maxRetries) {
+          const timeRemaining = timeoutMs - (Date.now() - startTime);
+          if (timeRemaining < retryDelay) {
+            Logger.warn('Not enough time remaining for another retry');
+            break;
+          }
+          Logger.info(`Waiting ${retryDelay / 1000} seconds before retry...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
+    }
+    
+    Logger.error(`XCResult file failed to become readable after ${maxRetries + 1} attempts over ${(Date.now() - startTime) / 1000} seconds`);
     return false;
   }
 
