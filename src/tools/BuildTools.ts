@@ -345,8 +345,7 @@ export class BuildTools {
     const testStartTime = Date.now();
     Logger.info(`Test start time: ${new Date(testStartTime).toISOString()}, found ${initialXCResults.length} initial XCResult files`);
 
-    // Start monitoring for build log immediately
-    const buildStartTime = Date.now();
+    // Start the test action
 
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
@@ -377,179 +376,175 @@ export class BuildTools {
       // Check for and handle "replace existing build" alert
       await this._handleReplaceExistingBuildAlert();
       
-      // Wait for new build log to appear (build failures take longer)
-      Logger.info('Waiting for test build log to appear...');
+      // Wait for build to complete using AppleScript
+      Logger.info('Waiting for test build to complete using AppleScript...');
       
-      let attempts = 0;
-      let newLog = null;
-      const initialWaitAttempts = 120; // Wait 2 minutes for build log - build failures take longer
-
-      while (attempts < initialWaitAttempts) {
-        const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
-        
-        if (currentLog) {
-          const logTime = currentLog.mtime.getTime();
-          const buildTime = buildStartTime;
-          Logger.debug(`Checking log: ${currentLog.path}, log time: ${logTime}, build time: ${buildTime}, diff: ${logTime - buildTime}ms`);
-          
-          if (logTime > buildTime) {
-            newLog = currentLog;
-            Logger.info(`Found new build log created after test start: ${newLog.path}`);
-            break;
-          }
-        } else {
-          Logger.debug(`No build log found yet, attempt ${attempts + 1}/${initialWaitAttempts}`);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        attempts++;
-      }
-      
-      // If no build log appeared after 2 minutes, something is wrong
-      if (!newLog) {
-        Logger.warn('No new build log found after 2 minutes - build may have failed to start');
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: `❌ BUILD LOG NOT FOUND\n\nNo build log appeared after 2 minutes of waiting.\n\n💡 This suggests:\n• Build failed to start\n• Project configuration issues\n• Xcode is not responding\n\nTry:\n• Check Xcode for error dialogs\n• Restart Xcode\n• Clean build folder (Product → Clean Build Folder)` 
-          }] 
-        };
-      }
-
-      // If we found a build log, monitor it for completion
-      if (newLog) {
-        Logger.info(`Monitoring test build completion for log: ${newLog.path}`);
-        
-        attempts = 0;
-        const maxAttempts = 3600; // 1 hour max for test build
-        let lastLogSize = 0;
-        let stableCount = 0;
-
-        while (attempts < maxAttempts) {
-          try {
-            const logStats = await stat(newLog.path);
-            const currentLogSize = logStats.size;
-            
-            if (currentLogSize === lastLogSize) {
-              stableCount++;
-              if (stableCount >= 1) {
-                Logger.debug(`Log stable for ${stableCount}s, trying to parse...`);
-                const results = await BuildLogParser.parseBuildLog(newLog.path);
-                Logger.debug(`Parse result has ${results.errors.length} errors, ${results.warnings.length} warnings`);
-                const isParseFailure = results.errors.some(error => 
-                  typeof error === 'string' && error.includes('XCLogParser failed to parse the build log.')
-                );
-                if (results && !isParseFailure) {
-                  Logger.info(`Build phase completed, log parsed successfully: ${newLog.path}`);
-                  
-                  // Check if build failed
-                  if (results.errors.length > 0) {
-                    let message = `❌ TEST BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
-                    results.errors.forEach(error => {
-                      message += `  • ${error}\n`;
-                      Logger.error('Test build error:', error);
-                    });
-                    
-                    // Also include warnings if present
-                    if (results.warnings.length > 0) {
-                      message += `\n⚠️ WARNINGS (${results.warnings.length}):\n`;
-                      results.warnings.forEach(warning => {
-                        message += `  • ${warning}\n`;
-                        Logger.warn('Test build warning:', warning);
-                      });
-                    }
-                    
-                    throw new McpError(
-                      ErrorCode.InternalError,
-                      message
-                    );
-                  } else if (results.warnings.length > 0) {
-                    // Build succeeded but has warnings - log them but continue
-                    Logger.warn(`Test build completed with ${results.warnings.length} warnings`);
-                    results.warnings.forEach(warning => {
-                      Logger.warn('Test build warning:', warning);
-                    });
-                  }
-                  
-                  break;
-                }
-              }
-            } else {
-              lastLogSize = currentLogSize;
-              stableCount = 0;
-            }
-          } catch (error) {
-            if (error instanceof McpError) {
-              throw error; // Re-throw build failures
-            }
-            const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
-            if (currentLog && currentLog.path !== newLog.path && currentLog.mtime.getTime() > buildStartTime) {
-              Logger.debug(`Build log changed to: ${currentLog.path}`);
-              newLog = currentLog;
-              lastLogSize = 0;
-              stableCount = 0;
-            }
-          }
-          
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          attempts++;
-        }
-      }
-
-      // Since build passed, we need to wait for the original test action to complete
-      Logger.info('Build succeeded, waiting for test execution to complete...');
-      
-      // First, wait for Xcode to report that the test action has completed
-      Logger.info('Waiting for Xcode to report test completion...');
-      const waitForCompletionScript = `
+      // Try to monitor the specific action we started
+      const waitForBuildScript = `
         (function() {
           const app = Application('Xcode');
           const workspace = app.activeWorkspaceDocument();
           if (!workspace) throw new Error('No active workspace');
           
-          // Find the test action by ID
-          const actionResult = workspace.schemeActionResults().find(result => result.id() === ${JSON.stringify(actionId)});
-          if (!actionResult) {
-            throw new Error('Could not find test action with ID: ' + ${JSON.stringify(actionId)});
-          }
-          
-          // Wait for action to complete
+          // Try to get the action result by ID: ${actionId}
           let attempts = 0;
-          const maxAttempts = 43200; // 12 hours max for test execution (43200 seconds)
+          const maxAttempts = 600; // 10 minutes max
           
-          while (attempts < maxAttempts && !actionResult.completed()) {
-            delay(1); // 1 second
+          while (attempts < maxAttempts) {
+            try {
+              // List all properties and methods available on workspace
+              if (attempts === 0) {
+                console.log('Workspace properties: ' + Object.getOwnPropertyNames(workspace).join(', '));
+              }
+              
+              // Try to access scheme action results
+              const actionResults = workspace.schemeActionResults();
+              console.log('Found ' + actionResults.length + ' action results');
+              
+              // Look for our specific action
+              for (let i = 0; i < actionResults.length; i++) {
+                const result = actionResults[i];
+                if (result.id() === ${JSON.stringify(actionId)}) {
+                  const completed = result.completed();
+                  console.log('Action ${actionId} completed: ' + completed);
+                  if (completed) {
+                    return 'Action completed after ' + attempts + ' seconds';
+                  }
+                }
+              }
+              
+            } catch (e) {
+              console.log('Error at attempt ' + attempts + ': ' + e);
+              
+              // If we can't monitor actions, just wait a reasonable time
+              if (attempts >= 300) { // 5 minutes fallback
+                return 'Fallback timeout after ' + attempts + ' seconds';
+              }
+            }
+            
+            delay(1);
             attempts++;
           }
           
-          if (attempts >= maxAttempts) {
-            throw new Error('Test execution timeout after 12 hours');
-          }
-          
-          // Get completion status
-          const status = actionResult.status ? actionResult.status() : 'unknown';
-          const error = actionResult.error ? actionResult.error() : null;
-          
-          return JSON.stringify({ 
-            completed: true,
-            status: status,
-            error: error,
-            duration: attempts
-          });
+          return 'Max timeout after ' + attempts + ' seconds';
         })()
       `;
       
-      let xcodeCompletion;
       try {
-        // Wait for test action to complete with 12-hour timeout
-        const completionResult = await JXAExecutor.execute(waitForCompletionScript, 43200000); // 12 hours in ms
-        xcodeCompletion = JSON.parse(completionResult);
-        Logger.info(`Xcode reported test completion after ${xcodeCompletion.duration} seconds, status: ${xcodeCompletion.status}`);
+        await JXAExecutor.execute(waitForBuildScript, 600000); // 10 minute timeout
+        Logger.info('AppleScript reports build completed');
       } catch (error) {
-        Logger.warn(`Failed to wait for Xcode completion: ${error instanceof Error ? error.message : error}`);
-        // Continue anyway - we'll still look for the xcresult file
-        xcodeCompletion = { completed: true, status: 'unknown', error: null };
+        Logger.warn(`AppleScript build monitoring failed: ${error instanceof Error ? error.message : error}`);
+        // Continue anyway - AppleScript probably timed out but build likely completed
       }
+      
+      // Skip file-based detection - rely purely on AppleScript
+      // After AppleScript says build is done, move to test completion monitoring
+      Logger.info('Build phase complete via AppleScript, proceeding to test completion monitoring...');
+      
+      // Get the final build log for analysis (but don't monitor it for completion)
+      const finalLog = await BuildLogParser.getLatestBuildLog(projectPath);
+      if (finalLog) {
+        Logger.info(`Analyzing final build log: ${finalLog.path}`);
+        
+        // Simple one-time analysis since AppleScript said build is complete
+        try {
+          const results = await BuildLogParser.parseBuildLog(finalLog.path);
+          Logger.info(`Build analysis: ${results.errors.length} errors, ${results.warnings.length} warnings`);
+          
+          if (results.errors.length > 0) {
+            let message = `❌ TEST BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
+            results.errors.forEach(error => {
+              message += `  • ${error}\n`;
+              Logger.error('Test build error:', error);
+            });
+            
+            if (results.warnings.length > 0) {
+              message += `\n⚠️ WARNINGS (${results.warnings.length}):\n`;
+              results.warnings.forEach(warning => {
+                message += `  • ${warning}\n`;
+                Logger.warn('Test build warning:', warning);
+              });
+            }
+            
+            throw new McpError(ErrorCode.InternalError, message);
+          } else if (results.warnings.length > 0) {
+            Logger.warn(`Test build completed with ${results.warnings.length} warnings`);
+            results.warnings.forEach(warning => {
+              Logger.warn('Test build warning:', warning);
+            });
+          }
+        } catch (error) {
+          if (error instanceof McpError) {
+            throw error; // Re-throw build failures
+          }
+          Logger.warn(`Failed to parse build log: ${error instanceof Error ? error.message : error}`);
+          // Continue anyway - assume build succeeded if AppleScript said so
+        }
+      }
+
+      // Since build passed, now wait for test execution to complete
+      Logger.info('Build succeeded, waiting for test execution to complete...');
+      
+      // Monitor test completion with proper AppleScript checking and 6-hour safety timeout
+      const testStartTime = Date.now();
+      const maxTestTime = 21600000; // 6 hours safety timeout
+      let testCompleted = false;
+      let monitoringSeconds = 0;
+      
+      Logger.info('Monitoring test completion with 6-hour safety timeout...');
+      
+      while (!testCompleted && (Date.now() - testStartTime) < maxTestTime) {
+        try {
+          // Check test completion via AppleScript every 30 seconds
+          const checkScript = `
+            (function() {
+              const app = Application('Xcode');
+              const workspace = app.activeWorkspaceDocument();
+              if (!workspace) return 'No workspace';
+              
+              const actions = workspace.schemeActionResults();
+              for (let i = 0; i < actions.length; i++) {
+                const action = actions[i];
+                if (action.id() === "${actionId}") {
+                  const status = action.status();
+                  const completed = action.completed();
+                  return status + ':' + completed;
+                }
+              }
+              return 'Action not found';
+            })()
+          `;
+          
+          const result = await JXAExecutor.execute(checkScript, 15000);
+          const [status, completed] = result.split(':');
+          
+          // Log progress every 2 minutes
+          if (monitoringSeconds % 120 === 0) {
+            Logger.info(`Test monitoring: ${Math.floor(monitoringSeconds/60)}min - Action ${actionId}: status=${status}, completed=${completed}`);
+          }
+          
+          // Check if test is complete
+          if (completed === 'true' && (status === 'succeeded' || status === 'failed' || status === 'cancelled' || status === 'error occurred')) {
+            testCompleted = true;
+            Logger.info(`Test completed after ${Math.floor(monitoringSeconds/60)} minutes: status=${status}`);
+            break;
+          }
+          
+        } catch (error) {
+          Logger.warn(`Test monitoring error at ${Math.floor(monitoringSeconds/60)}min: ${error instanceof Error ? error.message : error}`);
+        }
+        
+        // Wait 30 seconds before next check
+        await new Promise(resolve => setTimeout(resolve, 30000));
+        monitoringSeconds += 30;
+      }
+      
+      if (!testCompleted) {
+        Logger.warn('Test monitoring reached 6-hour timeout - proceeding anyway');
+      }
+      
+      Logger.info('Test monitoring result: Test completion detected or timeout reached');
       
       // Only AFTER test completion is confirmed, look for the xcresult file
       Logger.info('Test execution completed, now looking for XCResult file...');
@@ -586,7 +581,7 @@ export class BuildTools {
         
         // Use the robust waiting method that checks for staging disappearance,
         // file presence, size stabilization, and reading with retries
-        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, 30000); // 30 seconds
+        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, 60000); // 60 seconds - tests are already complete
         
         if (isReady) {
           // File is ready, verify analysis works

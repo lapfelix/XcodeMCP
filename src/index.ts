@@ -108,14 +108,45 @@ export class XcodeMCPServer extends XcodeServer {
             }
             
           } else if (req.method === 'GET' && url.pathname === '/') {
-            // Simple status page
+            // MCP Server Discovery - provide server capabilities and endpoints
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ 
-              status: 'XcodeMCP server running',
-              activeSessions: sseTransports.size,
-              endpoints: {
-                sse: '/sse',
-                message: '/message'
+              protocolVersion: '2024-11-05',
+              capabilities: {
+                tools: {},
+                logging: {}
+              },
+              serverInfo: {
+                name: 'xcode-mcp-server',
+                version: '1.7.4'
+              },
+              transport: {
+                type: 'sse',
+                endpoints: {
+                  sse: '/sse',
+                  message: '/message'
+                }
+              },
+              status: 'running',
+              activeSessions: sseTransports.size
+            }));
+          } else if (req.method === 'GET' && url.pathname === '/.well-known/mcp') {
+            // MCP Discovery endpoint
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              protocolVersion: '2024-11-05',
+              serverInfo: {
+                name: 'xcode-mcp-server',
+                version: '1.7.4'
+              },
+              capabilities: {
+                tools: {},
+                logging: {}
+              },
+              transport: {
+                type: 'sse',
+                sseEndpoint: '/sse',
+                messageEndpoint: '/message'
               }
             }));
           } else {

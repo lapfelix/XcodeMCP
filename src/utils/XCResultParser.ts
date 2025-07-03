@@ -213,7 +213,7 @@ export class XCResultParser {
     for (let attempt = 0; attempt < maxRetries + 1; attempt++) {
       try {
         Logger.info(`Reading attempt ${attempt + 1}/${maxRetries + 1}...`);
-        await XCResultParser.runXCResultTool(['get', 'summary', '--path', xcresultPath, '--format', 'json'], 15000);
+        await XCResultParser.runXCResultTool(['get', 'test-results', 'summary', '--path', xcresultPath], 15000);
         Logger.info(`XCResult is ready after ${attempt + 1} attempts: ${xcresultPath}`);
         return true;
       } catch (error) {
