@@ -240,51 +240,67 @@ export class XCResultParser {
    * Get test results summary
    */
   public async getTestResultsSummary(): Promise<TestResultsSummary> {
-    const output = await XCResultParser.runXCResultTool([
-      'get', 'test-results', 'summary',
-      '--path', this.xcresultPath,
-      '--format', 'json'
-    ]);
-    
-    const cleanedOutput = this.cleanJSONFloats(output);
-    return JSON.parse(cleanedOutput);
+    try {
+      const output = await XCResultParser.runXCResultTool([
+        'get', 'test-results', 'summary',
+        '--path', this.xcresultPath,
+        '--format', 'json'
+      ]);
+      
+      const cleanedOutput = this.cleanJSONFloats(output);
+      return JSON.parse(cleanedOutput);
+    } catch (error) {
+      Logger.error(`Failed to get test results summary from ${this.xcresultPath}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Cannot read XCResult test summary: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
    * Get detailed test results
    */
   public async getTestResults(): Promise<TestResults> {
-    const output = await XCResultParser.runXCResultTool([
-      'get', 'test-results', 'tests',
-      '--path', this.xcresultPath,
-      '--format', 'json'
-    ]);
-    
-    const cleanedOutput = this.cleanJSONFloats(output);
-    return JSON.parse(cleanedOutput);
+    try {
+      const output = await XCResultParser.runXCResultTool([
+        'get', 'test-results', 'tests',
+        '--path', this.xcresultPath,
+        '--format', 'json'
+      ]);
+      
+      const cleanedOutput = this.cleanJSONFloats(output);
+      return JSON.parse(cleanedOutput);
+    } catch (error) {
+      Logger.error(`Failed to get detailed test results from ${this.xcresultPath}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Cannot read XCResult test details: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
    * Analyze xcresult and provide comprehensive summary
    */
   public async analyzeXCResult(): Promise<XCResultAnalysis> {
-    const summary = await this.getTestResultsSummary();
-    
-    const totalPassRate = summary.totalTestCount > 0 
-      ? (summary.passedTests / summary.totalTestCount) * 100 
-      : 0;
+    try {
+      const summary = await this.getTestResultsSummary();
+      
+      const totalPassRate = summary.totalTestCount > 0 
+        ? (summary.passedTests / summary.totalTestCount) * 100 
+        : 0;
 
-    const duration = this.formatDuration(summary.finishTime.value - summary.startTime.value);
+      const duration = this.formatDuration(summary.finishTime.value - summary.startTime.value);
 
-    return {
-      summary,
-      totalTests: summary.totalTestCount,
-      passedTests: summary.passedTests,
-      failedTests: summary.failedTests,
-      skippedTests: summary.skippedTests,
-      passRate: totalPassRate,
-      duration
-    };
+      return {
+        summary,
+        totalTests: summary.totalTestCount,
+        passedTests: summary.passedTests,
+        failedTests: summary.failedTests,
+        skippedTests: summary.skippedTests,
+        passRate: totalPassRate,
+        duration
+      };
+    } catch (error) {
+      Logger.error(`Failed to analyze XCResult: ${error instanceof Error ? error.message : String(error)}`);
+      // Return a safe fallback analysis
+      throw new Error(`XCResult analysis failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
@@ -608,38 +624,109 @@ export class XCResultParser {
 
   private static async runXCResultTool(args: string[], timeoutMs: number = 15000): Promise<string> {
     return new Promise((resolve, reject) => {
+      let isResolved = false;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+      
       const process = spawn('xcrun', ['xcresulttool', ...args], {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: false // Ensure process is killed with parent
       });
       
       let stdout = '';
       let stderr = '';
       
-      process.stdout.on('data', (data) => {
+      // Helper function to safely resolve/reject only once
+      const safeResolve = (value: string) => {
+        if (isResolved) return;
+        isResolved = true;
+        cleanup();
+        resolve(value);
+      };
+      
+      const safeReject = (error: Error) => {
+        if (isResolved) return;
+        isResolved = true;
+        cleanup();
+        reject(error);
+      };
+      
+      // Helper function to cleanup resources
+      const cleanup = () => {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+        
+        // Forcefully kill the process if it's still running
+        if (!process.killed) {
+          try {
+            // Try graceful termination first
+            process.kill('SIGTERM');
+            
+            // Force kill after 2 seconds if still running
+            setTimeout(() => {
+              if (!process.killed) {
+                try {
+                  process.kill('SIGKILL');
+                } catch (killError) {
+                  Logger.warn('Failed to force kill xcresulttool process:', killError);
+                }
+              }
+            }, 2000);
+          } catch (killError) {
+            Logger.warn('Failed to kill xcresulttool process:', killError);
+          }
+        }
+        
+        // Remove all listeners to prevent memory leaks
+        try {
+          process.removeAllListeners();
+          if (process.stdout) process.stdout.removeAllListeners();
+          if (process.stderr) process.stderr.removeAllListeners();
+        } catch (listenerError) {
+          Logger.warn('Failed to remove process listeners:', listenerError);
+        }
+      };
+      
+      // Set up data collection
+      process.stdout?.on('data', (data) => {
         stdout += data.toString();
       });
       
-      process.stderr.on('data', (data) => {
+      process.stderr?.on('data', (data) => {
         stderr += data.toString();
       });
       
-      const timeout = setTimeout(() => {
-        process.kill();
-        reject(new Error(`xcresulttool command timed out after ${timeoutMs}ms`));
+      // Set up timeout with proper cleanup
+      timeoutHandle = setTimeout(() => {
+        safeReject(new Error(`xcresulttool command timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       
-      process.on('close', (code) => {
-        clearTimeout(timeout);
+      // Handle process completion
+      process.on('close', (code, signal) => {
         if (code === 0) {
-          resolve(stdout);
+          safeResolve(stdout);
         } else {
-          reject(new Error(`xcresulttool failed with code ${code}: ${stderr}`));
+          const errorMsg = signal 
+            ? `xcresulttool was killed with signal ${signal}: ${stderr}`
+            : `xcresulttool failed with code ${code}: ${stderr}`;
+          safeReject(new Error(errorMsg));
         }
       });
       
+      // Handle process errors
       process.on('error', (error) => {
-        clearTimeout(timeout);
-        reject(error);
+        safeReject(new Error(`xcresulttool process error: ${error.message}`));
+      });
+      
+      // Handle unexpected process termination
+      process.on('exit', (code, signal) => {
+        if (!isResolved) {
+          const errorMsg = signal 
+            ? `xcresulttool exited unexpectedly with signal ${signal}`
+            : `xcresulttool exited unexpectedly with code ${code}`;
+          safeReject(new Error(errorMsg));
+        }
       });
     });
   }
