@@ -377,12 +377,12 @@ export class BuildTools {
       // Check for and handle "replace existing build" alert
       await this._handleReplaceExistingBuildAlert();
       
-      // Wait for new build log to appear
+      // Wait for new build log to appear (build failures take longer)
       Logger.info('Waiting for test build log to appear...');
       
       let attempts = 0;
       let newLog = null;
-      const initialWaitAttempts = 10; // Wait only 10 seconds for build log - tests often run without rebuilding
+      const initialWaitAttempts = 120; // Wait 2 minutes for build log - build failures take longer
 
       while (attempts < initialWaitAttempts) {
         const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
@@ -405,9 +405,15 @@ export class BuildTools {
         attempts++;
       }
       
-      // If no build log appeared, proceed without parsing
+      // If no build log appeared after 2 minutes, something is wrong
       if (!newLog) {
-        Logger.info('No new build log found - test may be running in background or completed quickly');
+        Logger.warn('No new build log found after 2 minutes - build may have failed to start');
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: `❌ BUILD LOG NOT FOUND\n\nNo build log appeared after 2 minutes of waiting.\n\n💡 This suggests:\n• Build failed to start\n• Project configuration issues\n• Xcode is not responding\n\nTry:\n• Check Xcode for error dialogs\n• Restart Xcode\n• Clean build folder (Product → Clean Build Folder)` 
+          }] 
+        };
       }
 
       // If we found a build log, monitor it for completion
