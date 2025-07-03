@@ -1169,171 +1169,153 @@ export class BuildTools {
   private static async _handleReplaceExistingBuildAlert(): Promise<void> {
     const alertScript = `
       (function() {
-        const app = Application('Xcode');
-        let alertHandled = false;
-        
         try {
-          // Check for modal alert sheets first
-          const windows = app.windows();
-          for (let i = 0; i < windows.length; i++) {
-            const window = windows[i];
-            try {
-              const sheets = window.sheets();
-              if (sheets && sheets.length > 0) {
-                const sheet = sheets[0];
-                console.log('Found sheet in window ' + i);
-                const buttons = sheet.buttons();
-                console.log('Sheet has ' + buttons.length + ' buttons');
-                
-                // Log all button names to understand what's available
-                const buttonNames = [];
-                for (let j = 0; j < buttons.length; j++) {
-                  try {
-                    const buttonName = buttons[j].name();
-                    buttonNames.push(buttonName);
-                  } catch (e) {
-                    buttonNames.push('(unnamed)');
-                  }
-                }
-                console.log('Button names: ' + JSON.stringify(buttonNames));
-                
-                // Look for "Replace" button or similar confirmation buttons
-                for (let j = 0; j < buttons.length; j++) {
-                  const button = buttons[j];
-                  const buttonName = button.name();
-                  
-                  if (buttonName && (
-                    buttonName.toLowerCase().includes('replace') ||
-                    buttonName.toLowerCase().includes('stop') ||
-                    buttonName.toLowerCase() === 'ok' ||
-                    buttonName.toLowerCase() === 'yes' ||
-                    buttonName.toLowerCase() === 'continue'
-                  )) {
-                    button.click();
-                    alertHandled = true;
-                    return 'Alert handled: clicked ' + buttonName + ' (from buttons: ' + JSON.stringify(buttonNames) + ')';
-                  }
-                }
-              }
-            } catch (e) {
-              // Continue to next window if this one fails
-            }
-          }
+          // Use System Events approach first as it's more reliable for sheet dialogs
+          const systemEvents = Application('System Events');
+          const xcodeProcesses = systemEvents.processes.whose({name: 'Xcode'});
           
-          // Check for embedded alert views within the main window
-          // These might be part of the build progress area or toolbar
-          if (!alertHandled) {
-            const mainWindow = app.windows()[0];
-            if (mainWindow) {
+          if (xcodeProcesses.length > 0) {
+            const xcodeProcess = xcodeProcesses[0];
+            const windows = xcodeProcess.windows();
+            
+            // Check for sheets in regular windows (most common case)
+            for (let i = 0; i < windows.length; i++) {
               try {
-                // Try to find any buttons with alert-like text in the main interface
-                const allButtons = mainWindow.entireContents().filter(function(element) {
-                  try {
-                    return element.constructor.name === 'Button';
-                  } catch (e) {
-                    return false;
-                  }
-                });
+                const window = windows[i];
+                const sheets = window.sheets();
                 
-                for (let k = 0; k < allButtons.length; k++) {
-                  try {
-                    const button = allButtons[k];
-                    const buttonName = button.name();
-                    
-                    if (buttonName && (
-                      buttonName.toLowerCase().includes('replace') ||
-                      buttonName.toLowerCase().includes('stop') ||
-                      (buttonName.toLowerCase().includes('cancel') && buttonName.toLowerCase().includes('build'))
-                    )) {
-                      button.click();
-                      alertHandled = true;
-                      return 'Embedded alert handled: clicked ' + buttonName;
+                if (sheets && sheets.length > 0) {
+                  const sheet = sheets[0];
+                  const buttons = sheet.buttons();
+                  
+                  // Look for Replace, Continue, OK, Yes buttons (in order of preference)
+                  const preferredButtons = ['Replace', 'Continue', 'OK', 'Yes', 'Stop and Replace'];
+                  
+                  for (const preferredButton of preferredButtons) {
+                    for (let b = 0; b < buttons.length; b++) {
+                      try {
+                        const button = buttons[b];
+                        const buttonTitle = button.title();
+                        
+                        if (buttonTitle === preferredButton) {
+                          button.click();
+                          return 'Sheet alert handled: clicked ' + buttonTitle;
+                        }
+                      } catch (e) {
+                        // Continue to next button
+                      }
                     }
-                  } catch (e) {
-                    // Continue to next button if this one fails
                   }
+                  
+                  // If no preferred button found, try partial matches
+                  for (let b = 0; b < buttons.length; b++) {
+                    try {
+                      const button = buttons[b];
+                      const buttonTitle = button.title();
+                      
+                      if (buttonTitle && (
+                        buttonTitle.toLowerCase().includes('replace') ||
+                        buttonTitle.toLowerCase().includes('continue') ||
+                        buttonTitle.toLowerCase().includes('stop') ||
+                        buttonTitle.toLowerCase() === 'ok' ||
+                        buttonTitle.toLowerCase() === 'yes'
+                      )) {
+                        button.click();
+                        return 'Sheet alert handled: clicked ' + buttonTitle + ' (partial match)';
+                      }
+                    } catch (e) {
+                      // Continue to next button
+                    }
+                  }
+                  
+                  // Log available buttons for debugging
+                  const availableButtons = [];
+                  for (let b = 0; b < buttons.length; b++) {
+                    try {
+                      availableButtons.push(buttons[b].title());
+                    } catch (e) {
+                      availableButtons.push('(unnamed)');
+                    }
+                  }
+                  
+                  return 'Sheet found but no suitable button. Available: ' + JSON.stringify(availableButtons);
                 }
               } catch (e) {
-                // Failed to search for embedded buttons
+                // Continue to next window
               }
             }
-          }
-          
-          // Try system-level alert handling as fallback
-          if (!alertHandled) {
-            const systemEvents = Application('System Events');
-            const processes = systemEvents.processes.whose({name: 'Xcode'});
             
-            if (processes.length > 0) {
-              const xcodeProcess = processes[0];
-              const dialogs = xcodeProcess.windows.whose({subrole: 'AXDialog'});
-              
-              for (let d = 0; d < dialogs.length; d++) {
-                try {
-                  const dialog = dialogs[d];
-                  const buttons = dialog.buttons();
-                  
-                  for (let b = 0; b < buttons.length; b++) {
+            // Check for modal dialogs
+            const dialogs = xcodeProcess.windows.whose({subrole: 'AXDialog'});
+            for (let d = 0; d < dialogs.length; d++) {
+              try {
+                const dialog = dialogs[d];
+                const buttons = dialog.buttons();
+                
+                for (let b = 0; b < buttons.length; b++) {
+                  try {
                     const button = buttons[b];
                     const buttonTitle = button.title();
                     
                     if (buttonTitle && (
                       buttonTitle.toLowerCase().includes('replace') ||
+                      buttonTitle.toLowerCase().includes('continue') ||
                       buttonTitle.toLowerCase().includes('stop') ||
-                      buttonTitle.toLowerCase() === 'ok'
+                      buttonTitle.toLowerCase() === 'ok' ||
+                      buttonTitle.toLowerCase() === 'yes'
                     )) {
                       button.click();
-                      alertHandled = true;
-                      return 'System dialog handled: clicked ' + buttonTitle;
+                      return 'Dialog alert handled: clicked ' + buttonTitle;
                     }
+                  } catch (e) {
+                    // Continue to next button
                   }
-                } catch (e) {
-                  // Continue to next dialog
                 }
+              } catch (e) {
+                // Continue to next dialog
               }
             }
           }
           
-          // Additional check for build progress indicators and embedded alerts
-          if (!alertHandled) {
+          // Fallback to Xcode app approach for embedded alerts
+          const app = Application('Xcode');
+          const windows = app.windows();
+          
+          for (let i = 0; i < windows.length; i++) {
             try {
-              const mainWindow = app.windows()[0];
-              if (mainWindow) {
-                // Look specifically in areas where build alerts typically appear
-                // such as the navigator area, toolbar, or status areas
-                const allElements = mainWindow.entireContents();
+              const window = windows[i];
+              const sheets = window.sheets();
+              
+              if (sheets && sheets.length > 0) {
+                const sheet = sheets[0];
+                const buttons = sheet.buttons();
                 
-                for (let e = 0; e < allElements.length; e++) {
+                for (let j = 0; j < buttons.length; j++) {
                   try {
-                    const element = allElements[e];
+                    const button = buttons[j];
+                    const buttonName = button.name();
                     
-                    // Check for text that indicates an active operation alert
-                    if (element.description && typeof element.description === 'function') {
-                      const desc = element.description();
-                      if (desc && (
-                        desc.toLowerCase().includes('replace') ||
-                        desc.toLowerCase().includes('stop build') ||
-                        desc.toLowerCase().includes('cancel build')
-                      )) {
-                        // Try to click this element if it's clickable
-                        if (element.click && typeof element.click === 'function') {
-                          element.click();
-                          alertHandled = true;
-                          return 'Embedded element handled: clicked element with description ' + desc;
-                        }
-                      }
+                    if (buttonName && (
+                      buttonName.toLowerCase().includes('replace') ||
+                      buttonName.toLowerCase().includes('continue') ||
+                      buttonName.toLowerCase().includes('stop') ||
+                      buttonName.toLowerCase() === 'ok' ||
+                      buttonName.toLowerCase() === 'yes'
+                    )) {
+                      button.click();
+                      return 'Xcode app sheet handled: clicked ' + buttonName;
                     }
                   } catch (e) {
-                    // Continue to next element
+                    // Continue to next button
                   }
                 }
               }
             } catch (e) {
-              // Failed to search embedded elements
+              // Continue to next window
             }
           }
           
-          return alertHandled ? 'Alert handled successfully' : 'No alert found';
+          return 'No alert found';
           
         } catch (error) {
           return 'Alert check failed: ' + error.message;
