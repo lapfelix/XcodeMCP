@@ -509,7 +509,7 @@ export class BuildTools {
           
           // Wait for action to complete
           let attempts = 0;
-          const maxAttempts = 30; // 30 seconds max for test execution - if no completion, proceed anyway
+          const maxAttempts = 43200; // 12 hours max for test execution (43200 seconds)
           
           while (attempts < maxAttempts && !actionResult.completed()) {
             delay(1); // 1 second
@@ -535,8 +535,8 @@ export class BuildTools {
       
       let xcodeCompletion;
       try {
-        // Wait for test action to complete (no external timeout - let JXA script's 2-hour timeout handle it)
-        const completionResult = await JXAExecutor.execute(waitForCompletionScript);
+        // Wait for test action to complete with 12-hour timeout
+        const completionResult = await JXAExecutor.execute(waitForCompletionScript, 43200000); // 12 hours in ms
         xcodeCompletion = JSON.parse(completionResult);
         Logger.info(`Xcode reported test completion after ${xcodeCompletion.duration} seconds, status: ${xcodeCompletion.status}`);
       } catch (error) {
