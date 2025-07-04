@@ -12,18 +12,16 @@ export interface TestResultsSummary {
   environmentDescription: string;
   expectedFailures: number;
   failedTests: number;
-  finishTime: SafeDouble;
+  finishTime: number;  // Changed from SafeDouble to number
   passedTests: number;
   result: string;
   skippedTests: number;
-  startTime: SafeDouble;
+  startTime: number;   // Changed from SafeDouble to number
   testFailures: TestFailure[];
   title: string;
   totalTestCount: number;
-}
-
-export interface SafeDouble {
-  value: number;
+  statistics: any[];   // Added missing field
+  topInsights: any[];  // Added missing field
 }
 
 export interface DeviceConfiguration {
@@ -68,7 +66,7 @@ export interface TestResults {
 export interface TestNode {
   children?: TestNode[];
   duration?: string;
-  durationInSeconds?: SafeDouble;
+  durationInSeconds?: number;
   name: string;
   nodeIdentifier?: string;
   nodeIdentifierURL?: string;
@@ -213,7 +211,7 @@ export class XCResultParser {
     for (let attempt = 0; attempt < maxRetries + 1; attempt++) {
       try {
         Logger.info(`Reading attempt ${attempt + 1}/${maxRetries + 1}...`);
-        await XCResultParser.runXCResultTool(['get', 'test-results', 'summary', '--path', xcresultPath], 15000);
+        await XCResultParser.runXCResultTool(['get', 'test-results', 'summary', '--path', xcresultPath, '--compact'], 15000);
         Logger.info(`XCResult is ready after ${attempt + 1} attempts: ${xcresultPath}`);
         return true;
       } catch (error) {
@@ -240,15 +238,23 @@ export class XCResultParser {
    * Get test results summary
    */
   public async getTestResultsSummary(): Promise<TestResultsSummary> {
+    Logger.debug(`getTestResultsSummary called for path: ${this.xcresultPath}`);
+    Logger.debug(`File exists check: ${existsSync(this.xcresultPath)}`);
     try {
+      Logger.debug('About to call runXCResultTool...');
       const output = await XCResultParser.runXCResultTool([
         'get', 'test-results', 'summary',
         '--path', this.xcresultPath,
-        '--format', 'json'
+        '--compact'
       ]);
       
+      Logger.debug(`xcresulttool output length: ${output.length} characters`);
+      Logger.debug(`xcresulttool output first 200 chars: ${output.substring(0, 200)}`);
+      
       const cleanedOutput = this.cleanJSONFloats(output);
-      return JSON.parse(cleanedOutput);
+      const parsed = JSON.parse(cleanedOutput);
+      Logger.debug(`Successfully parsed JSON with keys: ${Object.keys(parsed).join(', ')}`);
+      return parsed;
     } catch (error) {
       Logger.error(`Failed to get test results summary from ${this.xcresultPath}: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error(`Cannot read XCResult test summary: ${error instanceof Error ? error.message : String(error)}`);
@@ -263,7 +269,7 @@ export class XCResultParser {
       const output = await XCResultParser.runXCResultTool([
         'get', 'test-results', 'tests',
         '--path', this.xcresultPath,
-        '--format', 'json'
+        '--compact'
       ]);
       
       const cleanedOutput = this.cleanJSONFloats(output);
@@ -285,7 +291,7 @@ export class XCResultParser {
         ? (summary.passedTests / summary.totalTestCount) * 100 
         : 0;
 
-      const duration = this.formatDuration(summary.finishTime.value - summary.startTime.value);
+      const duration = this.formatDuration(summary.finishTime - summary.startTime);
 
       return {
         summary,
@@ -455,7 +461,7 @@ export class XCResultParser {
         'get', 'test-results', 'activities',
         '--test-id', testId,
         '--path', this.xcresultPath,
-        '--format', 'json'
+        '--compact'
       ], 600000); // 10 minutes timeout
 
       Logger.info(`Successfully retrieved activities data for test: ${testId}`);
@@ -623,13 +629,19 @@ export class XCResultParser {
   }
 
   private static async runXCResultTool(args: string[], timeoutMs: number = 15000): Promise<string> {
+    Logger.debug(`Running xcresulttool with args: ${JSON.stringify(['xcresulttool', ...args])}`);
+    Logger.debug(`Process environment PATH: ${process.env.PATH?.substring(0, 200)}...`);
     return new Promise((resolve, reject) => {
       let isResolved = false;
       let timeoutHandle: NodeJS.Timeout | null = null;
       
-      const process = spawn('xcrun', ['xcresulttool', ...args], {
+      const childProcess = spawn('xcrun', ['xcresulttool', ...args], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        detached: false // Ensure process is killed with parent
+        detached: false, // Ensure process is killed with parent
+        env: {
+          ...process.env,
+          PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/Applications/Xcode-16.4.0.app/Contents/Developer/usr/bin:' + (process.env.PATH || '')
+        }
       });
       
       let stdout = '';
@@ -658,16 +670,16 @@ export class XCResultParser {
         }
         
         // Forcefully kill the process if it's still running
-        if (!process.killed) {
+        if (!childProcess.killed) {
           try {
             // Try graceful termination first
-            process.kill('SIGTERM');
+            childProcess.kill('SIGTERM');
             
             // Force kill after 2 seconds if still running
             setTimeout(() => {
-              if (!process.killed) {
+              if (!childProcess.killed) {
                 try {
-                  process.kill('SIGKILL');
+                  childProcess.kill('SIGKILL');
                 } catch (killError) {
                   Logger.warn('Failed to force kill xcresulttool process:', killError);
                 }
@@ -680,20 +692,20 @@ export class XCResultParser {
         
         // Remove all listeners to prevent memory leaks
         try {
-          process.removeAllListeners();
-          if (process.stdout) process.stdout.removeAllListeners();
-          if (process.stderr) process.stderr.removeAllListeners();
+          childProcess.removeAllListeners();
+          if (childProcess.stdout) childProcess.stdout.removeAllListeners();
+          if (childProcess.stderr) childProcess.stderr.removeAllListeners();
         } catch (listenerError) {
           Logger.warn('Failed to remove process listeners:', listenerError);
         }
       };
       
       // Set up data collection
-      process.stdout?.on('data', (data) => {
+      childProcess.stdout?.on('data', (data) => {
         stdout += data.toString();
       });
       
-      process.stderr?.on('data', (data) => {
+      childProcess.stderr?.on('data', (data) => {
         stderr += data.toString();
       });
       
@@ -703,9 +715,16 @@ export class XCResultParser {
       }, timeoutMs);
       
       // Handle process completion
-      process.on('close', (code, signal) => {
+      childProcess.on('close', (code, signal) => {
+        Logger.debug(`Process closed: code=${code}, signal=${signal}, stdout.length=${stdout.length}, stderr.length=${stderr.length}`);
         if (code === 0) {
-          safeResolve(stdout);
+          if (stdout.trim() === '') {
+            Logger.warn(`xcresulttool succeeded but returned empty output. stderr: ${stderr}`);
+            safeReject(new Error(`xcresulttool exited with code 0 but returned no output. stderr: ${stderr}`));
+          } else {
+            Logger.debug(`Process succeeded with ${stdout.length} chars of output`);
+            safeResolve(stdout);
+          }
         } else {
           const errorMsg = signal 
             ? `xcresulttool was killed with signal ${signal}: ${stderr}`
@@ -715,19 +734,11 @@ export class XCResultParser {
       });
       
       // Handle process errors
-      process.on('error', (error) => {
+      childProcess.on('error', (error) => {
         safeReject(new Error(`xcresulttool process error: ${error.message}`));
       });
       
-      // Handle unexpected process termination
-      process.on('exit', (code, signal) => {
-        if (!isResolved) {
-          const errorMsg = signal 
-            ? `xcresulttool exited unexpectedly with signal ${signal}`
-            : `xcresulttool exited unexpectedly with code ${code}`;
-          safeReject(new Error(errorMsg));
-        }
-      });
+      // Note: Removed exit handler as it fires before close handler and prevents proper output processing
     });
   }
 

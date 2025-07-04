@@ -1,6 +1,6 @@
 {
   "name": "xcodemcp",
-  "version": "1.7.6",
+  "version": "1.8.0",
   "description": "Model Context Protocol server for Xcode build automation and log parsing",
   "main": "dist/index.js",
   "type": "module",
@@ -28,7 +28,9 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.6.0"
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "eventsource": "^4.0.0",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

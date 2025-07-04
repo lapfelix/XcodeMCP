@@ -20,7 +20,32 @@ interface XCLogParserResult {
 export class BuildLogParser {
   public static async findProjectDerivedData(projectPath: string): Promise<string | null> {
     const customDerivedDataLocation = await this.getCustomDerivedDataLocationFromXcodePreferences();
-    const projectName = path.basename(projectPath, path.extname(projectPath));
+    
+    // Extract the actual project name from .xcodeproj or .xcworkspace files
+    let projectName: string;
+    let actualProjectPath = projectPath;
+    
+    // If projectPath points to a .xcodeproj file, get its directory
+    if (projectPath.endsWith('.xcodeproj') || projectPath.endsWith('.xcworkspace')) {
+      actualProjectPath = path.dirname(projectPath);
+      projectName = path.basename(projectPath, path.extname(projectPath));
+    } else {
+      // projectPath is a directory, find project files inside it
+      try {
+        const files = await readdir(actualProjectPath);
+        const projectFile = files.find(file => file.endsWith('.xcodeproj') || file.endsWith('.xcworkspace'));
+        if (projectFile) {
+          projectName = path.basename(projectFile, path.extname(projectFile));
+        } else {
+          // Fallback to directory name if no project files found
+          projectName = path.basename(actualProjectPath, path.extname(actualProjectPath));
+        }
+      } catch {
+        // Fallback to directory name if we can't read the directory
+        projectName = path.basename(actualProjectPath, path.extname(actualProjectPath));
+      }
+    }
+    
     let derivedDataPath: string;
     
     if (!customDerivedDataLocation) {
@@ -50,10 +75,13 @@ export class BuildLogParser {
           if (workspacePathMatch && workspacePathMatch[1]) {
             const workspacePath = workspacePathMatch[1];
             // Resolve both paths to absolute paths for comparison
-            const resolvedProjectPath = path.resolve(projectPath);
+            const resolvedProjectPath = path.resolve(actualProjectPath);
             const resolvedWorkspacePath = path.resolve(workspacePath);
             
-            if (resolvedProjectPath === resolvedWorkspacePath) {
+            // Check if paths match exactly, or if workspace path is inside the project directory
+            if (resolvedProjectPath === resolvedWorkspacePath || 
+                resolvedWorkspacePath.startsWith(resolvedProjectPath + path.sep) ||
+                resolvedProjectPath.startsWith(resolvedWorkspacePath + path.sep)) {
               return fullPath;
             }
           }
@@ -124,6 +152,39 @@ export class BuildLogParser {
       return latestLog;
     } catch (error) {
       return null;
+    }
+  }
+
+  public static async getRecentBuildLogs(projectPath: string, sinceTime: number): Promise<BuildLogInfo[]> {
+    const derivedData = await this.findProjectDerivedData(projectPath);
+    if (!derivedData) return [];
+    
+    const logsDir = path.join(derivedData, 'Logs', 'Build');
+    
+    try {
+      const files = await readdir(logsDir);
+      const logFiles = files.filter(file => file.endsWith('.xcactivitylog'));
+      
+      if (logFiles.length === 0) return [];
+      
+      const recentLogs: BuildLogInfo[] = [];
+      
+      for (const logFile of logFiles) {
+        const fullPath = path.join(logsDir, logFile);
+        const stats = await stat(fullPath);
+        
+        // Include logs modified since the test started (with 30 second buffer for clock differences)
+        if (stats.mtime.getTime() >= sinceTime - 30000) {
+          recentLogs.push({ path: fullPath, mtime: stats.mtime });
+        }
+      }
+      
+      // Sort by modification time (newest first)
+      recentLogs.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+      
+      return recentLogs;
+    } catch (error) {
+      return [];
     }
   }
 

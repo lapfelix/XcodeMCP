@@ -376,118 +376,89 @@ export class BuildTools {
       // Check for and handle "replace existing build" alert
       await this._handleReplaceExistingBuildAlert();
       
-      // Wait for build to complete using AppleScript
-      Logger.info('Waiting for test build to complete using AppleScript...');
+      // Wait for build to complete - use a simple time-based approach since AppleScript monitoring is unreliable
+      Logger.info('Waiting for test build to complete...');
       
-      // Try to monitor the specific action we started
-      const waitForBuildScript = `
-        (function() {
-          const app = Application('Xcode');
-          const workspace = app.activeWorkspaceDocument();
-          if (!workspace) throw new Error('No active workspace');
-          
-          // Try to get the action result by ID: ${actionId}
-          let attempts = 0;
-          const maxAttempts = 600; // 10 minutes max
-          
-          while (attempts < maxAttempts) {
-            try {
-              // List all properties and methods available on workspace
-              if (attempts === 0) {
-                console.log('Workspace properties: ' + Object.getOwnPropertyNames(workspace).join(', '));
-              }
-              
-              // Try to access scheme action results
-              const actionResults = workspace.schemeActionResults();
-              console.log('Found ' + actionResults.length + ' action results');
-              
-              // Look for our specific action
-              for (let i = 0; i < actionResults.length; i++) {
-                const result = actionResults[i];
-                if (result.id() === ${JSON.stringify(actionId)}) {
-                  const completed = result.completed();
-                  console.log('Action ${actionId} completed: ' + completed);
-                  if (completed) {
-                    return 'Action completed after ' + attempts + ' seconds';
-                  }
-                }
-              }
-              
-            } catch (e) {
-              console.log('Error at attempt ' + attempts + ': ' + e);
-              
-              // If we can't monitor actions, just wait a reasonable time
-              if (attempts >= 300) { // 5 minutes fallback
-                return 'Fallback timeout after ' + attempts + ' seconds';
-              }
-            }
-            
-            delay(1);
-            attempts++;
-          }
-          
-          return 'Max timeout after ' + attempts + ' seconds';
-        })()
-      `;
+      // Wait a reasonable time for build to complete (most builds finish within 60 seconds)
+      await new Promise(resolve => setTimeout(resolve, 60000)); // 1 minute
       
-      try {
-        await JXAExecutor.execute(waitForBuildScript, 600000); // 10 minute timeout
-        Logger.info('AppleScript reports build completed');
-      } catch (error) {
-        Logger.warn(`AppleScript build monitoring failed: ${error instanceof Error ? error.message : error}`);
-        // Continue anyway - AppleScript probably timed out but build likely completed
-      }
+      Logger.info('Build phase wait complete, proceeding to test completion monitoring...');
       
-      // Skip file-based detection - rely purely on AppleScript
-      // After AppleScript says build is done, move to test completion monitoring
-      Logger.info('Build phase complete via AppleScript, proceeding to test completion monitoring...');
+      // Get ALL recent build logs for analysis (test might create multiple logs)
+      Logger.info(`DEBUG: testStartTime = ${testStartTime} (${new Date(testStartTime)})`);
+      Logger.info(`DEBUG: projectPath = ${projectPath}`);
       
-      // Get the final build log for analysis (but don't monitor it for completion)
-      const finalLog = await BuildLogParser.getLatestBuildLog(projectPath);
-      if (finalLog) {
-        Logger.info(`Analyzing final build log: ${finalLog.path}`);
+      // First check if we can find DerivedData
+      const derivedData = await BuildLogParser.findProjectDerivedData(projectPath);
+      Logger.info(`DEBUG: derivedData = ${derivedData}`);
+      
+      const recentLogs = await BuildLogParser.getRecentBuildLogs(projectPath, testStartTime);
+      Logger.info(`DEBUG: recentLogs.length = ${recentLogs.length}`);
+      if (recentLogs.length > 0) {
+        Logger.info(`Analyzing ${recentLogs.length} recent build logs created during test...`);
         
-        // Simple one-time analysis since AppleScript said build is complete
-        try {
-          const results = await BuildLogParser.parseBuildLog(finalLog.path);
-          Logger.info(`Build analysis: ${results.errors.length} errors, ${results.warnings.length} warnings`);
+        let totalErrors: string[] = [];
+        let totalWarnings: string[] = [];
+        
+        // Analyze each recent log to catch build errors in any of them
+        for (const log of recentLogs) {
+          try {
+            Logger.info(`Analyzing build log: ${log.path}`);
+            const results = await BuildLogParser.parseBuildLog(log.path);
+            Logger.info(`Log analysis: ${results.errors.length} errors, ${results.warnings.length} warnings`);
+            
+            // Accumulate errors and warnings from all logs
+            totalErrors.push(...results.errors);
+            totalWarnings.push(...results.warnings);
+            
+          } catch (error) {
+            Logger.warn(`Failed to parse build log ${log.path}: ${error instanceof Error ? error.message : error}`);
+          }
+        }
+        
+        Logger.info(`Total build analysis: ${totalErrors.length} errors, ${totalWarnings.length} warnings`);
+        
+        Logger.info(`DEBUG: totalErrors = ${JSON.stringify(totalErrors)}`);
+        Logger.info(`DEBUG: totalErrors.length = ${totalErrors.length}`);
+        Logger.info(`DEBUG: totalErrors.length > 0 = ${totalErrors.length > 0}`);
+        
+        if (totalErrors.length > 0) {
+          let message = `❌ TEST BUILD FAILED (${totalErrors.length} errors)\n\nERRORS:\n`;
+          totalErrors.forEach(error => {
+            message += `  • ${error}\n`;
+            Logger.error('Test build error:', error);
+          });
           
-          if (results.errors.length > 0) {
-            let message = `❌ TEST BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
-            results.errors.forEach(error => {
-              message += `  • ${error}\n`;
-              Logger.error('Test build error:', error);
-            });
-            
-            if (results.warnings.length > 0) {
-              message += `\n⚠️ WARNINGS (${results.warnings.length}):\n`;
-              results.warnings.forEach(warning => {
-                message += `  • ${warning}\n`;
-                Logger.warn('Test build warning:', warning);
-              });
-            }
-            
-            throw new McpError(ErrorCode.InternalError, message);
-          } else if (results.warnings.length > 0) {
-            Logger.warn(`Test build completed with ${results.warnings.length} warnings`);
-            results.warnings.forEach(warning => {
+          if (totalWarnings.length > 0) {
+            message += `\n⚠️ WARNINGS (${totalWarnings.length}):\n`;
+            totalWarnings.slice(0, 10).forEach(warning => {
+              message += `  • ${warning}\n`;
               Logger.warn('Test build warning:', warning);
             });
+            if (totalWarnings.length > 10) {
+              message += `  ... and ${totalWarnings.length - 10} more warnings\n`;
+            }
           }
-        } catch (error) {
-          if (error instanceof McpError) {
-            throw error; // Re-throw build failures
+          
+          Logger.error('ABOUT TO THROW McpError for test build failure');
+          throw new McpError(ErrorCode.InternalError, message);
+        } else if (totalWarnings.length > 0) {
+          Logger.warn(`Test build completed with ${totalWarnings.length} warnings`);
+          totalWarnings.slice(0, 10).forEach(warning => {
+            Logger.warn('Test build warning:', warning);
+          });
+          if (totalWarnings.length > 10) {
+            Logger.warn(`... and ${totalWarnings.length - 10} more warnings`);
           }
-          Logger.warn(`Failed to parse build log: ${error instanceof Error ? error.message : error}`);
-          // Continue anyway - assume build succeeded if AppleScript said so
         }
+      } else {
+        Logger.info(`DEBUG: No recent build logs found since ${new Date(testStartTime)}`);
       }
 
       // Since build passed, now wait for test execution to complete
       Logger.info('Build succeeded, waiting for test execution to complete...');
       
       // Monitor test completion with proper AppleScript checking and 6-hour safety timeout
-      const testStartTime = Date.now();
       const maxTestTime = 21600000; // 6 hours safety timeout
       let testCompleted = false;
       let monitoringSeconds = 0;
@@ -722,6 +693,11 @@ export class BuildTools {
         return { content: [{ type: 'text', text: message }] };
       }
     } catch (error) {
+      // Re-throw McpErrors to properly signal build failures
+      if (error instanceof McpError) {
+        throw error;
+      }
+      
       const enhancedError = ErrorHelper.parseCommonErrors(error as Error);
       if (enhancedError) {
         return { content: [{ type: 'text', text: enhancedError }] };
