@@ -550,9 +550,24 @@ export class BuildTools {
       if (newXCResult) {
         Logger.info(`Found xcresult file: ${newXCResult}, waiting for it to be fully written...`);
         
-        // Use the robust waiting method that checks for staging disappearance,
-        // file presence, size stabilization, and reading with retries
-        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, 60000); // 60 seconds - tests are already complete
+        // Calculate how long the test took
+        const testEndTime = Date.now();
+        const testDurationMs = testEndTime - testStartTime;
+        const testDurationMinutes = Math.round(testDurationMs / 60000);
+        
+        // Wait 8% of test duration before even attempting to read XCResult
+        // This gives Xcode plenty of time to finish writing everything
+        const proportionalWaitMs = Math.round(testDurationMs * 0.08);
+        const proportionalWaitSeconds = Math.round(proportionalWaitMs / 1000);
+        
+        Logger.info(`Test ran for ${testDurationMinutes} minutes`);
+        Logger.info(`Applying 8% wait time: ${proportionalWaitSeconds} seconds before checking XCResult`);
+        Logger.info(`This prevents premature reads that could contribute to file corruption`);
+        
+        await new Promise(resolve => setTimeout(resolve, proportionalWaitMs));
+        
+        // Now use the robust waiting method with the test duration for context
+        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, testDurationMs); // Pass test duration for proportional timeouts
         
         if (isReady) {
           // File is ready, verify analysis works

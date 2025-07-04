@@ -106,58 +106,94 @@ export class XCResultParser {
 
   /**
    * Wait for xcresult to be fully written and readable with robust checks
+   * Uses proportional timeouts based on test duration - longer tests need more patience
    */
-  public static async waitForXCResultReadiness(xcresultPath: string, timeoutMs: number = 180000): Promise<boolean> {
+  public static async waitForXCResultReadiness(xcresultPath: string, testDurationMs: number = 1200000): Promise<boolean> {
+    // Use test duration as the timeout - longer tests likely produce larger XCResults that need more time
+    const timeoutMs = Math.max(testDurationMs, 300000); // Minimum 5 minutes, but scale with test duration
     const startTime = Date.now();
     Logger.info(`Starting robust XCResult readiness check for: ${xcresultPath}`);
+    Logger.info(`Total timeout: ${timeoutMs/60000} minutes`);
     
-    // Phase 1: Wait for staging folder to disappear
-    Logger.info('Phase 1: Waiting for staging folder to disappear...');
+    // Phase 1: Wait for staging folder to disappear - this is CRITICAL 
+    // We must not try to read the file while Xcode is still writing to it
+    // Based on user insight: we contribute to corruption by reading too early
+    Logger.info('Phase 1: Waiting for staging folder to disappear (this indicates Xcode is done writing)...');
     const stagingPath = `${xcresultPath}/Staging`;
-    while (Date.now() - startTime < timeoutMs) {
+    // Use 90% of timeout for staging folder wait since this is the most critical phase
+    const stagingTimeout = Math.min(timeoutMs * 0.9, 300000); // 90% of total, max 5 minutes for staging
+    
+    Logger.info(`Will wait up to ${stagingTimeout/60000} minutes for staging folder to disappear`);
+    let lastLogTime = Date.now();
+    
+    while (Date.now() - startTime < stagingTimeout) {
       if (!existsSync(stagingPath)) {
-        Logger.info('Staging folder has disappeared');
+        Logger.info('Staging folder has disappeared - Xcode finished writing XCResult');
         break;
       }
-      Logger.debug(`Staging folder still exists: ${stagingPath}`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Log every 30 seconds to show progress
+      if (Date.now() - lastLogTime >= 30000) {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        Logger.info(`Staging folder still exists after ${elapsed}s - Xcode is still writing XCResult...`);
+        lastLogTime = Date.now();
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Check every 5 seconds for less CPU usage
     }
     
     if (existsSync(stagingPath)) {
-      Logger.warn('Staging folder still exists after timeout');
-      return false;
+      const elapsed = Math.round((Date.now() - startTime) / 60000);
+      Logger.warn(`Staging folder still exists after ${elapsed} minutes - Xcode may still be writing`);
+      Logger.warn('This might indicate an Xcode issue or very large test results');
+      Logger.warn('Proceeding anyway but file may not be complete');
+    } else {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      Logger.info(`Staging folder disappeared after ${elapsed} seconds - ready to proceed`);
     }
     
-    // Phase 2: Wait for essential files to appear
-    Logger.info('Phase 2: Waiting for essential XCResult files to appear...');
+    // Phase 2: Wait patiently for essential files to appear 
+    // Based on user insight: we must not touch xcresulttool until files are completely ready
+    Logger.info('Phase 2: Waiting patiently for essential XCResult files to appear...');
     const infoPlistPath = `${xcresultPath}/Info.plist`;
     const databasePath = `${xcresultPath}/database.sqlite3`;
     const dataPath = `${xcresultPath}/Data`;
     
+    let lastProgressTime = Date.now();
     while (Date.now() - startTime < timeoutMs) {
       const hasInfoPlist = existsSync(infoPlistPath);
       const hasDatabase = existsSync(databasePath);
       const hasData = existsSync(dataPath);
       
       if (hasInfoPlist && hasDatabase && hasData) {
-        Logger.info('All essential XCResult files are present');
+        Logger.info('All essential XCResult files are present - ready for stabilization check');
         break;
       }
       
-      Logger.debug(`XCResult files status - Info.plist: ${hasInfoPlist ? '✓' : '✗'}, database.sqlite3: ${hasDatabase ? '✓' : '✗'}, Data: ${hasData ? '✓' : '✗'}`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Log progress every 30 seconds
+      if (Date.now() - lastProgressTime >= 30000) {
+        Logger.info(`Still waiting for XCResult files - Info.plist: ${hasInfoPlist ? '✓' : '✗'}, database.sqlite3: ${hasDatabase ? '✓' : '✗'}, Data: ${hasData ? '✓' : '✗'}`);
+        lastProgressTime = Date.now();
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Check every 3 seconds
     }
     
     if (!existsSync(infoPlistPath) || !existsSync(databasePath) || !existsSync(dataPath)) {
-      Logger.warn('Not all essential XCResult files appeared within timeout');
+      const elapsed = Math.round((Date.now() - startTime) / 60000);
+      Logger.error(`Essential XCResult files did not appear after ${elapsed} minutes`);
+      Logger.error(`This suggests Xcode encountered a serious issue writing the XCResult`);
       return false;
     }
     
-    // Phase 3: Wait for file sizes to stabilize
-    Logger.info('Phase 3: Waiting for file sizes to stabilize...');
+    // Phase 3: Critical stabilization check - wait until sizes haven't changed for 10+ seconds
+    // This implements user insight: "wait until its size hasnt changed for 10 seconds before trying to read it"
+    Logger.info('Phase 3: Waiting for file sizes to stabilize (10+ seconds unchanged)...');
+    Logger.info('This is critical - we must not touch xcresulttool until files are completely stable');
+    
     let previousSizes: Record<string, number> = {};
-    let stableCount = 0;
-    const requiredStableChecks = 3; // Must be stable for 3 consecutive checks
+    let stableStartTime: number | null = null;
+    const requiredStabilitySeconds = 12; // 12 seconds of stability to be extra safe
     
     while (Date.now() - startTime < timeoutMs) {
       try {
@@ -178,40 +214,66 @@ export class XCResultParser {
         );
         
         if (sizesMatch && Object.keys(previousSizes).length > 0) {
-          stableCount++;
-          Logger.debug(`File sizes stable for ${stableCount}/${requiredStableChecks} checks`);
+          // Sizes are stable
+          if (stableStartTime === null) {
+            stableStartTime = Date.now();
+            Logger.info(`File sizes stabilized - starting ${requiredStabilitySeconds}s countdown`);
+          }
           
-          if (stableCount >= requiredStableChecks) {
-            Logger.info('File sizes have stabilized');
+          const stableForSeconds = (Date.now() - stableStartTime) / 1000;
+          if (stableForSeconds >= requiredStabilitySeconds) {
+            Logger.info(`File sizes have been stable for ${Math.round(stableForSeconds)} seconds - ready for xcresulttool`);
             break;
+          } else {
+            Logger.debug(`File sizes stable for ${Math.round(stableForSeconds)}/${requiredStabilitySeconds} seconds`);
           }
         } else {
-          stableCount = 0;
-          Logger.debug(`File sizes changed - Info.plist: ${currentSizes.infoPlist}, database: ${currentSizes.database}, Data: ${currentSizes.data}`);
+          // Sizes changed - reset stability timer
+          if (stableStartTime !== null) {
+            Logger.info(`File sizes changed - restarting stability check`);
+            Logger.debug(`New sizes - Info.plist: ${currentSizes.infoPlist}, database: ${currentSizes.database}, Data: ${currentSizes.data}`);
+          }
+          stableStartTime = null;
         }
         
         previousSizes = currentSizes;
         await new Promise(resolve => setTimeout(resolve, 2000)); // Check every 2 seconds
       } catch (error) {
         Logger.debug(`Error checking file sizes: ${error}`);
-        stableCount = 0;
+        stableStartTime = null; // Reset on error
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
     
-    // Add artificial delay after stabilization for extra safety
-    Logger.info('Adding 10-second safety delay after stabilization...');
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    if (stableStartTime === null || (Date.now() - stableStartTime) / 1000 < requiredStabilitySeconds) {
+      const elapsed = Math.round((Date.now() - startTime) / 60000);
+      Logger.error(`File sizes did not stabilize within ${elapsed} minutes`);
+      Logger.error(`This suggests Xcode is still writing to the XCResult file`);
+      return false;
+    }
     
-    // Phase 4: Attempt to read with retries
+    // Add extra safety delay as requested
+    Logger.info('Adding extra 5-second safety delay before touching xcresulttool...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // Phase 4: Attempt to read with retries  
     Logger.info('Phase 4: Attempting to read XCResult with retries...');
-    const maxRetries = 9; // Up to 9 retries (total 10 attempts)
-    const retryDelay = 10000; // 10 seconds between retries
+    const maxRetries = 14; // Up to 14 retries (total 15 attempts)
+    const retryDelay = 15000; // 15 seconds between retries for more patient waiting
     
     for (let attempt = 0; attempt < maxRetries + 1; attempt++) {
       try {
         Logger.info(`Reading attempt ${attempt + 1}/${maxRetries + 1}...`);
-        await XCResultParser.runXCResultTool(['get', 'test-results', 'summary', '--path', xcresultPath, '--compact'], 15000);
+        const output = await XCResultParser.runXCResultTool(['get', 'test-results', 'summary', '--path', xcresultPath, '--compact'], 20000);
+        // Verify we got actual JSON data, not just empty output
+        if (output.trim().length < 10) {
+          throw new Error('xcresulttool returned insufficient data');
+        }
+        // Try to parse the JSON to make sure it's valid
+        const parsed = JSON.parse(output);
+        if (!parsed.totalTestCount && parsed.totalTestCount !== 0) {
+          throw new Error('XCResult data is incomplete - missing totalTestCount');
+        }
         Logger.info(`XCResult is ready after ${attempt + 1} attempts: ${xcresultPath}`);
         return true;
       } catch (error) {
@@ -220,7 +282,7 @@ export class XCResultParser {
         
         if (attempt < maxRetries) {
           const timeRemaining = timeoutMs - (Date.now() - startTime);
-          if (timeRemaining < retryDelay) {
+          if (timeRemaining < retryDelay + 5000) { // Need 5 extra seconds for the actual command
             Logger.warn('Not enough time remaining for another retry');
             break;
           }
@@ -230,7 +292,10 @@ export class XCResultParser {
       }
     }
     
-    Logger.error(`XCResult file failed to become readable after ${maxRetries + 1} attempts over ${(Date.now() - startTime) / 1000} seconds`);
+    const totalTimeSeconds = (Date.now() - startTime) / 1000;
+    Logger.error(`XCResult file failed to become readable after ${maxRetries + 1} attempts over ${totalTimeSeconds} seconds`);
+    Logger.error(`This is likely a genuine Xcode bug where the XCResult file remains corrupt after ${Math.round(totalTimeSeconds/60)} minutes of waiting`);
+    Logger.error(`XCResult path: ${xcresultPath}`);
     return false;
   }
 
