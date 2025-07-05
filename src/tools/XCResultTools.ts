@@ -300,8 +300,23 @@ export class XCResultTools {
         output += 'No attachments found for this test.\n';
       } else {
         attachments.forEach((att, index) => {
-          output += `[${index + 1}] ${att.name || att.filename || 'unnamed'}\n`;
-          output += `    Type: ${att.uniform_type_identifier || att.uniformTypeIdentifier || 'unknown'}\n`;
+          const filename = att.name || att.filename || 'unnamed';
+          output += `[${index + 1}] ${filename}\n`;
+          
+          // Determine type from identifier or filename
+          let type = att.uniform_type_identifier || att.uniformTypeIdentifier || '';
+          if (!type || type === 'unknown') {
+            // Infer type from filename extension
+            const ext = filename.toLowerCase().split('.').pop();
+            if (ext === 'jpeg' || ext === 'jpg') type = 'public.jpeg';
+            else if (ext === 'png') type = 'public.png';
+            else if (ext === 'mp4') type = 'public.mpeg-4';
+            else if (ext === 'mov') type = 'com.apple.quicktime-movie';
+            else if (ext === 'txt') type = 'public.plain-text';
+            else type = 'unknown';
+          }
+          
+          output += `    Type: ${type}\n`;
           if (att.payloadSize || att.payload_size) {
             output += `    Size: ${att.payloadSize || att.payload_size} bytes\n`;
           }
@@ -446,10 +461,23 @@ export class XCResultTools {
         };
       }
       
+      // Determine type from identifier or filename
+      let type = attachment.uniform_type_identifier || attachment.uniformTypeIdentifier || '';
+      if (!type || type === 'unknown') {
+        // Infer type from filename extension
+        const ext = filename.toLowerCase().split('.').pop();
+        if (ext === 'jpeg' || ext === 'jpg') type = 'public.jpeg';
+        else if (ext === 'png') type = 'public.png';
+        else if (ext === 'mp4') type = 'public.mpeg-4';
+        else if (ext === 'mov') type = 'com.apple.quicktime-movie';
+        else if (ext === 'txt') type = 'public.plain-text';
+        else type = 'unknown';
+      }
+
       return { 
         content: [{ 
           type: 'text', 
-          text: `Attachment exported to: ${exportedPath}\nFilename: ${filename}\nType: ${attachment.uniform_type_identifier || attachment.uniformTypeIdentifier || 'unknown'}`
+          text: `Attachment exported to: ${exportedPath}\nFilename: ${filename}\nType: ${type}`
         }] 
       };
 
@@ -751,14 +779,21 @@ export class XCResultTools {
         };
       }
 
-      // Look for direct PNG screenshot attachment as fallback
-      const pngAttachment = this.findPNGAttachment(attachments);
-      if (pngAttachment) {
-        const screenshotPath = await this.exportScreenshotAttachment(parser, pngAttachment);
+      // Look for direct image attachment (PNG or JPEG) as fallback
+      const closestImageResult = this.findClosestImageAttachment(attachments, timestamp);
+      if (closestImageResult) {
+        const screenshotPath = await this.exportScreenshotAttachment(parser, closestImageResult.attachment);
+        const timeDiff = closestImageResult.timeDifference;
+        const timeDiffText = timeDiff === 0 
+          ? 'at exact timestamp' 
+          : timeDiff > 0 
+            ? `${timeDiff.toFixed(2)}s after requested time` 
+            : `${Math.abs(timeDiff).toFixed(2)}s before requested time`;
+            
         return { 
           content: [{ 
             type: 'text', 
-            text: `Screenshot exported for test '${testNode.name}': ${screenshotPath}` 
+            text: `Screenshot exported for test '${testNode.name}' (${timeDiffText}): ${screenshotPath}` 
           }] 
         };
       }
@@ -1379,20 +1414,57 @@ export class XCResultTools {
     }
   }
 
+
   /**
-   * Find PNG screenshot attachment (actual image files only)
+   * Find the closest image attachment to a specific timestamp
    */
-  private static findPNGAttachment(attachments: TestAttachment[]): TestAttachment | undefined {
-    return attachments.find(attachment => {
+  private static findClosestImageAttachment(attachments: TestAttachment[], targetTimestamp: number): { attachment: TestAttachment; timeDifference: number } | undefined {
+    // Filter to only image attachments
+    const imageAttachments = attachments.filter(attachment => {
       const typeId = attachment.uniform_type_identifier || attachment.uniformTypeIdentifier || '';
       const filename = attachment.filename || attachment.name || '';
       
-      // Check for PNG type identifier or .png extension (actual image files)
       return typeId.includes('png') || 
              typeId === 'public.png' || 
-             filename.toLowerCase().endsWith('.png');
+             typeId.includes('jpeg') ||
+             typeId.includes('jpg') ||
+             typeId === 'public.jpeg' ||
+             filename.toLowerCase().endsWith('.png') ||
+             filename.toLowerCase().endsWith('.jpg') ||
+             filename.toLowerCase().endsWith('.jpeg');
     });
+
+    if (imageAttachments.length === 0) {
+      return undefined;
+    }
+
+    // Find the attachment with the smallest time difference
+    let closest: { attachment: TestAttachment; timeDifference: number } | undefined;
+    let smallestDiff = Infinity;
+
+    for (const attachment of imageAttachments) {
+      if (attachment.timestamp !== undefined) {
+        const timeDiff = attachment.timestamp - targetTimestamp;
+        const absDiff = Math.abs(timeDiff);
+        
+        if (absDiff < smallestDiff) {
+          smallestDiff = absDiff;
+          closest = { attachment, timeDifference: timeDiff };
+        }
+      }
+    }
+
+    // If no attachment has a timestamp, return the first image attachment
+    if (!closest && imageAttachments.length > 0) {
+      const firstImage = imageAttachments[0];
+      if (firstImage) {
+        return { attachment: firstImage, timeDifference: 0 };
+      }
+    }
+    
+    return closest;
   }
+
 
   /**
    * Find video attachment by type identifier and filename extension
