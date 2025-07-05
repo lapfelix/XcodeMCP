@@ -541,7 +541,7 @@ export class XcodeServer {
           },
           {
             name: 'xcresult_browser_get_console',
-            description: 'Get console output and test activities for a specific test in an XCResult file',
+            description: 'Get console output and test activities for a specific test in an XCResult file. Large output (>1000 lines or >50KB) is automatically saved to a temporary file.',
             inputSchema: {
               type: 'object',
               properties: {

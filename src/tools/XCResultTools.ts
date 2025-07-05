@@ -146,6 +146,37 @@ export class XCResultTools {
         output += activities;
       }
 
+      // Check if output is very long and should be saved to a file
+      const lineCount = output.split('\n').length;
+      const charCount = output.length;
+      
+      // If output is longer than 1000 lines or 50KB, save to file
+      if (lineCount > 1000 || charCount > 50000) {
+        const { writeFile } = await import('fs/promises');
+        const { tmpdir } = await import('os');
+        const { join } = await import('path');
+        
+        // Create a unique filename
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const safeTestName = testNode.name.replace(/[^a-zA-Z0-9]/g, '_');
+        const filename = `console_output_${safeTestName}_${timestamp}.txt`;
+        const filePath = join(tmpdir(), filename);
+        
+        await writeFile(filePath, output, 'utf-8');
+        
+        const fileSizeKB = Math.round(charCount / 1024);
+        
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: `📟 Console Output for: ${testNode.name}\n` +
+                  `📄 Output saved to file (${lineCount} lines, ${fileSizeKB} KB): ${filePath}\n\n` +
+                  `💡 The console output was too large to display directly. ` +
+                  `You can read the file to access the complete console log and test activities.`
+          }] 
+        };
+      }
+
       return { content: [{ type: 'text', text: output }] };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
