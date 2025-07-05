@@ -595,7 +595,7 @@ export class XcodeServer {
           },
           {
             name: 'xcresult_get_ui_hierarchy',
-            description: 'Get UI hierarchy attachment from test as slim AI-readable JSON (default) or full JSON. Returns compressed JSON with one-letter properties for efficient AI analysis.',
+            description: 'Get UI hierarchy attachment from test. Returns raw accessibility tree (best for AI), slim AI-readable JSON (default), or full JSON.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -614,6 +614,10 @@ export class XcodeServer {
                 full_hierarchy: {
                   type: 'boolean',
                   description: 'Set to true to get the full hierarchy (several MB). Default is false for AI-readable slim version.',
+                },
+                raw_format: {
+                  type: 'boolean',
+                  description: 'Set to true to get the raw accessibility tree text (most AI-friendly). Default is false for JSON format.',
                 },
               },
               required: ['xcresult_path', 'test_id'],
@@ -801,7 +805,8 @@ export class XcodeServer {
               args.xcresult_path as string,
               args.test_id as string,
               args.timestamp as number | undefined,
-              args.full_hierarchy as boolean | undefined
+              args.full_hierarchy as boolean | undefined,
+              args.raw_format as boolean | undefined
             );
           case 'xcresult_get_ui_element':
             return await XCResultTools.xcresultGetUIElement(

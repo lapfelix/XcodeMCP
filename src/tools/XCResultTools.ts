@@ -306,13 +306,16 @@ export class XCResultTools {
           // Determine type from identifier or filename
           let type = att.uniform_type_identifier || att.uniformTypeIdentifier || '';
           if (!type || type === 'unknown') {
-            // Infer type from filename extension
+            // Infer type from filename extension or special patterns
             const ext = filename.toLowerCase().split('.').pop();
             if (ext === 'jpeg' || ext === 'jpg') type = 'public.jpeg';
             else if (ext === 'png') type = 'public.png';
             else if (ext === 'mp4') type = 'public.mpeg-4';
             else if (ext === 'mov') type = 'com.apple.quicktime-movie';
             else if (ext === 'txt') type = 'public.plain-text';
+            else if (filename.toLowerCase().includes('app ui hierarchy')) type = 'ui-hierarchy';
+            else if (filename.toLowerCase().includes('ui snapshot')) type = 'ui-snapshot';
+            else if (filename.toLowerCase().includes('synthesized event')) type = 'synthesized-event';
             else type = 'unknown';
           }
           
@@ -348,6 +351,7 @@ export class XCResultTools {
       );
     }
   }
+
 
   /**
    * Export a specific attachment by index
@@ -448,30 +452,46 @@ export class XCResultTools {
       }
 
       const filename = attachment.filename || attachment.name || `attachment_${attachmentIndex}`;
-      const exportedPath = await parser.exportAttachment(attachmentId, filename);
       
-      // If it's an App UI hierarchy attachment and convertToJson is true, convert it
-      if (convertToJson && filename.includes('App UI hierarchy')) {
-        const hierarchyJson = await this.convertUIHierarchyToJSON(exportedPath);
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify(hierarchyJson)
-          }] 
-        };
-      }
-      
-      // Determine type from identifier or filename
+      // Determine type from identifier or filename first
       let type = attachment.uniform_type_identifier || attachment.uniformTypeIdentifier || '';
       if (!type || type === 'unknown') {
-        // Infer type from filename extension
+        // Infer type from filename extension or special patterns
         const ext = filename.toLowerCase().split('.').pop();
         if (ext === 'jpeg' || ext === 'jpg') type = 'public.jpeg';
         else if (ext === 'png') type = 'public.png';
         else if (ext === 'mp4') type = 'public.mpeg-4';
         else if (ext === 'mov') type = 'com.apple.quicktime-movie';
         else if (ext === 'txt') type = 'public.plain-text';
+        else if (filename.toLowerCase().includes('app ui hierarchy')) type = 'ui-hierarchy';
+        else if (filename.toLowerCase().includes('ui snapshot')) type = 'ui-snapshot';
+        else if (filename.toLowerCase().includes('synthesized event')) type = 'synthesized-event';
         else type = 'unknown';
+      }
+
+      const exportedPath = await parser.exportAttachment(attachmentId, filename);
+      
+      // Handle UI hierarchy files specially  
+      if (type === 'ui-hierarchy') {
+        if (convertToJson) {
+          const hierarchyJson = await this.convertUIHierarchyToJSON(exportedPath);
+          return { 
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify(hierarchyJson)
+            }] 
+          };
+        }
+        
+        // Return the raw UI hierarchy content (it's already AI-friendly)
+        const { readFile } = await import('fs/promises');
+        const hierarchyContent = await readFile(exportedPath, 'utf-8');
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: `UI Hierarchy for: ${filename}\nType: ${type}\n\n${hierarchyContent}`
+          }] 
+        };
       }
 
       return { 
@@ -509,7 +529,8 @@ export class XCResultTools {
     xcresultPath: string,
     testId: string,
     timestamp?: number,
-    fullHierarchy: boolean = false
+    fullHierarchy: boolean = false,
+    rawFormat: boolean = false
   ): Promise<McpResult> {
     // Validate xcresult path
     if (!existsSync(xcresultPath)) {
@@ -605,6 +626,34 @@ export class XCResultTools {
           ErrorCode.InternalError,
           `No valid UI hierarchy found for test '${testNode.name}'`
         );
+      }
+
+      // If raw format is requested, return the original accessibility tree text
+      if (rawFormat) {
+        const attachmentId = selectedAttachment.payloadId || selectedAttachment.payload_uuid || selectedAttachment.payloadUUID;
+        if (!attachmentId) {
+          throw new McpError(
+            ErrorCode.InternalError,
+            'UI hierarchy attachment does not have a valid ID for export'
+          );
+        }
+
+        const filename = selectedAttachment.filename || selectedAttachment.name || 'ui-hierarchy';
+        const exportedPath = await parser.exportAttachment(attachmentId, filename);
+        
+        const { readFile } = await import('fs/promises');
+        const hierarchyContent = await readFile(exportedPath, 'utf-8');
+        
+        const timestampInfo = timestamp !== undefined && selectedAttachment.timestamp !== undefined
+          ? ` (closest to ${timestamp}s, actual: ${selectedAttachment.timestamp}s)`
+          : '';
+
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: `🌲 Raw UI Hierarchy for test '${testNode.name}'${timestampInfo}:\n\n${hierarchyContent}`
+          }] 
+        };
       }
 
       // Export and convert text-based UI hierarchy to JSON
