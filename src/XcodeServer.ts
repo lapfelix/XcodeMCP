@@ -518,7 +518,7 @@ export class XcodeServer {
           },
           {
             name: 'xcresult_browse',
-            description: 'Browse XCResult files - list all tests or show details for a specific test. Returns comprehensive test results including pass/fail status, failure details, and browsing instructions.',
+            description: 'Browse XCResult files - list all tests or show details for a specific test. Returns comprehensive test results including pass/fail status, failure details, and browsing instructions. Large console output (>1000 lines or >50KB) is automatically saved to a temporary file.',
             inputSchema: {
               type: 'object',
               properties: {
