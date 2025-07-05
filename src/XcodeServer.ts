@@ -518,7 +518,7 @@ export class XcodeServer {
           },
           {
             name: 'xcresult_browse',
-            description: 'Browse XCResult files - list all tests or show details for a specific test. Returns comprehensive test results including pass/fail status, failure details, and browsing instructions. Large console output (>1000 lines or >50KB) is automatically saved to a temporary file.',
+            description: 'Browse XCResult files - list all tests or show details for a specific test. Returns comprehensive test results including pass/fail status, failure details, and browsing instructions. Large console output (>20 lines or >2KB) is automatically saved to a temporary file.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -541,7 +541,7 @@ export class XcodeServer {
           },
           {
             name: 'xcresult_browser_get_console',
-            description: 'Get console output and test activities for a specific test in an XCResult file. Large output (>1000 lines or >50KB) is automatically saved to a temporary file.',
+            description: 'Get console output and test activities for a specific test in an XCResult file. Large output (>20 lines or >2KB) is automatically saved to a temporary file.',
             inputSchema: {
               type: 'object',
               properties: {

@@ -691,8 +691,8 @@ export class XCResultParser {
       const lineCount = consoleSection.split('\n').length;
       const charCount = consoleSection.length;
       
-      // If output is longer than 1000 lines or 50KB, save to file
-      if (lineCount > 1000 || charCount > 50000) {
+      // If output is longer than 20 lines or 2KB, save to file
+      if (lineCount > 20 || charCount > 2000) {
         const { writeFile } = await import('fs/promises');
         const { tmpdir } = await import('os');
         const { join } = await import('path');
