@@ -261,12 +261,16 @@ export class XcodeServer {
       }
     }
 
-    // Only convert actual operation timeouts, not transport/network timeouts
-    if ((errorMessage.includes('timeout') || errorMessage.includes('timed out')) && 
+    // Only convert actual operation timeouts, not build errors containing 'timeout:' or transport errors
+    if ((errorMessage.includes(' timeout') || errorMessage.includes('timed out') || errorMessage.includes('timeout after')) && 
         !errorMessage.includes('Body Timeout Error') &&
         !errorMessage.includes('Transport error') &&
         !errorMessage.includes('SSE error') &&
-        !errorMessage.includes('terminated')) {
+        !errorMessage.includes('terminated') &&
+        !errorMessage.includes("'timeout:'") &&
+        !errorMessage.includes("timeout:' in call") &&
+        !errorMessage.includes('argument label') &&
+        !errorMessage.includes('TEST BUILD FAILED')) {
       return `❌ Operation timed out\n\n💡 This might indicate:\n• Xcode is not responding (try restarting Xcode)\n• System performance issues\n• Large project taking longer than expected\n• Network issues if downloading dependencies`;
     }
 
