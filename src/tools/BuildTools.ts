@@ -376,13 +376,27 @@ export class BuildTools {
       // Check for and handle "replace existing build" alert
       await this._handleReplaceExistingBuildAlert();
       
-      // Wait for build to complete - use a simple time-based approach since AppleScript monitoring is unreliable
-      Logger.info('Waiting for test build to complete...');
+      // Check for build errors with polling approach
+      Logger.info('Monitoring for build logs...');
       
-      // Wait a reasonable time for build to complete (most builds finish within 60 seconds)
-      await new Promise(resolve => setTimeout(resolve, 60000)); // 1 minute
+      // Poll for build logs for up to 30 seconds
+      let foundLogs = false;
+      for (let i = 0; i < 6; i++) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const logs = await BuildLogParser.getRecentBuildLogs(projectPath, testStartTime);
+        if (logs.length > 0) {
+          Logger.info(`Found ${logs.length} build logs after ${(i + 1) * 5} seconds`);
+          foundLogs = true;
+          break;
+        }
+        Logger.info(`No logs found after ${(i + 1) * 5} seconds, continuing to wait...`);
+      }
       
-      Logger.info('Build phase wait complete, proceeding to test completion monitoring...');
+      if (!foundLogs) {
+        Logger.info('No build logs found after 30 seconds - build may not have started yet');
+      }
+      
+      Logger.info('Build monitoring complete, proceeding to analysis...');
       
       // Get ALL recent build logs for analysis (test might create multiple logs)
       Logger.info(`DEBUG: testStartTime = ${testStartTime} (${new Date(testStartTime)})`);
