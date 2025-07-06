@@ -711,6 +711,12 @@ export class XcodeServer {
 
         switch (name) {
           case 'xcode_open_project':
+            if (!args.xcodeproj) {
+              throw new McpError(
+                ErrorCode.InvalidParams,
+                `Missing required parameter: xcodeproj\n\n💡 Expected: absolute path to .xcodeproj or .xcworkspace file`
+              );
+            }
             const result = await ProjectTools.openProject(args.xcodeproj as string);
             if (result && 'content' in result && result.content?.[0] && 'text' in result.content[0]) {
               const textContent = result.content[0];
@@ -733,6 +739,12 @@ export class XcodeServer {
               return { content: [{ type: 'text', text: 'Project close attempted - may have completed with dialogs' }] };
             }
           case 'xcode_build':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
+            if (!args.scheme) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: scheme`);
+            }
             return await BuildTools.build(
               args.xcodeproj as string, 
               args.scheme as string, 
@@ -740,14 +752,29 @@ export class XcodeServer {
               this.openProject.bind(this)
             );
           case 'xcode_clean':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
             return await BuildTools.clean(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_test':
+            if (!args.xcodeproj) {
+              throw new McpError(
+                ErrorCode.InvalidParams,
+                `Missing required parameter: xcodeproj\n\n💡 To fix this:\n• Specify the absolute path to your .xcodeproj or .xcworkspace file using the "xcodeproj" parameter\n• Example: /Users/username/MyApp/MyApp.xcodeproj\n• You can drag the project file from Finder to get the path`
+              );
+            }
             return await BuildTools.test(
               args.xcodeproj as string, 
               (args.commandLineArguments as string[]) || [], 
               this.openProject.bind(this)
             );
           case 'xcode_run':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
+            if (!args.scheme) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: scheme`);
+            }
             return await BuildTools.run(
               args.xcodeproj as string, 
               args.scheme as string,
@@ -755,6 +782,12 @@ export class XcodeServer {
               this.openProject.bind(this)
             );
           case 'xcode_debug':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
+            if (!args.scheme) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: scheme`);
+            }
             return await BuildTools.debug(
               args.xcodeproj as string, 
               args.scheme as string, 
@@ -764,43 +797,94 @@ export class XcodeServer {
           case 'xcode_stop':
             return await BuildTools.stop();
           case 'find_xcresults':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
             return await BuildTools.findXCResults(args.xcodeproj as string);
           case 'xcode_get_schemes':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
             return await ProjectTools.getSchemes(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_get_run_destinations':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
             return await ProjectTools.getRunDestinations(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_set_active_scheme':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
+            if (!args.schemeName) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: schemeName`);
+            }
             return await ProjectTools.setActiveScheme(
               args.xcodeproj as string, 
               args.schemeName as string, 
               this.openProject.bind(this)
             );
           case 'xcode_get_workspace_info':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
             return await InfoTools.getWorkspaceInfo(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_get_projects':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
             return await InfoTools.getProjects(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_open_file':
+            if (!args.filePath) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: filePath`);
+            }
             return await InfoTools.openFile(args.filePath as string, args.lineNumber as number);
           case 'xcresult_browse':
+            if (!args.xcresult_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
+            }
             return await XCResultTools.xcresultBrowse(
               args.xcresult_path as string,
               args.test_id as string | undefined,
               args.include_console as boolean || false
             );
           case 'xcresult_browser_get_console':
+            if (!args.xcresult_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
+            }
+            if (!args.test_id) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: test_id`);
+            }
             return await XCResultTools.xcresultBrowserGetConsole(
               args.xcresult_path as string,
               args.test_id as string
             );
           case 'xcresult_summary':
+            if (!args.xcresult_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
+            }
             return await XCResultTools.xcresultSummary(args.xcresult_path as string);
           case 'xcresult_get_screenshot':
+            if (!args.xcresult_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
+            }
+            if (!args.test_id) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: test_id`);
+            }
+            if (args.timestamp === undefined) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: timestamp`);
+            }
             return await XCResultTools.xcresultGetScreenshot(
               args.xcresult_path as string,
               args.test_id as string,
               args.timestamp as number
             );
           case 'xcresult_get_ui_hierarchy':
+            if (!args.xcresult_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
+            }
+            if (!args.test_id) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: test_id`);
+            }
             return await XCResultTools.xcresultGetUIHierarchy(
               args.xcresult_path as string,
               args.test_id as string,
@@ -809,17 +893,38 @@ export class XcodeServer {
               args.raw_format as boolean | undefined
             );
           case 'xcresult_get_ui_element':
+            if (!args.hierarchy_json_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: hierarchy_json_path`);
+            }
+            if (args.element_index === undefined) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: element_index`);
+            }
             return await XCResultTools.xcresultGetUIElement(
               args.hierarchy_json_path as string,
               args.element_index as number,
               args.include_children as boolean | undefined
             );
           case 'xcresult_list_attachments':
+            if (!args.xcresult_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
+            }
+            if (!args.test_id) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: test_id`);
+            }
             return await XCResultTools.xcresultListAttachments(
               args.xcresult_path as string,
               args.test_id as string
             );
           case 'xcresult_export_attachment':
+            if (!args.xcresult_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
+            }
+            if (!args.test_id) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: test_id`);
+            }
+            if (args.attachment_index === undefined) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: attachment_index`);
+            }
             return await XCResultTools.xcresultExportAttachment(
               args.xcresult_path as string,
               args.test_id as string,
