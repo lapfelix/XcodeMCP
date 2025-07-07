@@ -300,7 +300,13 @@ export class XcodeServer {
             description: 'Close the currently active Xcode project or workspace (automatically stops any running actions first)',
             inputSchema: {
               type: 'object',
-              properties: {},
+              properties: {
+                xcodeproj: {
+                  type: 'string',
+                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                },
+              },
+              required: ['xcodeproj'],
             },
           },
           {
@@ -738,6 +744,9 @@ export class XcodeServer {
             return result;
           case 'xcode_close_project':
             try {
+              const validationError = PathValidator.validateProjectPath(args.xcodeproj as string);
+              if (validationError) return validationError;
+              
               const closeResult = await ProjectTools.closeProject();
               this.currentProjectPath = null;
               return closeResult;
