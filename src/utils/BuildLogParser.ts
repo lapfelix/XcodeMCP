@@ -15,6 +15,7 @@ interface XCLogParserIssue {
 interface XCLogParserResult {
   errors?: XCLogParserIssue[];
   warnings?: XCLogParserIssue[];
+  buildStatus?: string;
 }
 
 export class BuildLogParser {
@@ -322,10 +323,14 @@ export class BuildLogParser {
             return `${location}: ${warning.title}`;
           });
           
-          resolve({
+          const buildResult: ParsedBuildResults = {
             errors,
             warnings
-          });
+          };
+          if (result.buildStatus) {
+            buildResult.buildStatus = result.buildStatus;
+          }
+          resolve(buildResult);
         } catch (parseError) {
           const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
           Logger.error('Failed to parse xclogparser output:', parseError);

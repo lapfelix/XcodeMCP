@@ -18,6 +18,7 @@ export interface BuildLogInfo {
 export interface ParsedBuildResults {
   errors: string[];
   warnings: string[];
+  buildStatus?: string;
 }
 
 export interface EnvironmentValidationResult {

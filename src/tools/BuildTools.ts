@@ -276,7 +276,13 @@ export class BuildTools {
     const schemeInfo = schemeName ? ` for scheme '${schemeName}'` : '';
     const destInfo = destination ? ` and destination '${destination}'` : '';
     
-    Logger.info(`Build completed${schemeInfo}${destInfo} - ${results.errors.length} errors, ${results.warnings.length} warnings`);
+    Logger.info(`Build completed${schemeInfo}${destInfo} - ${results.errors.length} errors, ${results.warnings.length} warnings, status: ${results.buildStatus || 'unknown'}`);
+    
+    // Handle stopped/interrupted builds
+    if (results.buildStatus === 'stopped') {
+      message = `⏹️ BUILD INTERRUPTED${schemeInfo}${destInfo}\n\nThe build was stopped or interrupted before completion.\n\n💡 This may happen when:\n  • The build was cancelled manually\n  • Xcode was closed during the build\n  • System resources were exhausted\n\nTry running the build again to complete it.`;
+      return { content: [{ type: 'text', text: message }] };
+    }
     
     if (results.errors.length > 0) {
       message = `❌ BUILD FAILED${schemeInfo}${destInfo} (${results.errors.length} errors)\n\nERRORS:\n`;
@@ -413,13 +419,19 @@ export class BuildTools {
         
         let totalErrors: string[] = [];
         let totalWarnings: string[] = [];
+        let hasStoppedBuild = false;
         
         // Analyze each recent log to catch build errors in any of them
         for (const log of recentLogs) {
           try {
             Logger.info(`Analyzing build log: ${log.path}`);
             const results = await BuildLogParser.parseBuildLog(log.path);
-            Logger.info(`Log analysis: ${results.errors.length} errors, ${results.warnings.length} warnings`);
+            Logger.info(`Log analysis: ${results.errors.length} errors, ${results.warnings.length} warnings, status: ${results.buildStatus || 'unknown'}`);
+            
+            // Check for stopped builds
+            if (results.buildStatus === 'stopped') {
+              hasStoppedBuild = true;
+            }
             
             // Accumulate errors and warnings from all logs
             totalErrors.push(...results.errors);
@@ -430,11 +442,18 @@ export class BuildTools {
           }
         }
         
-        Logger.info(`Total build analysis: ${totalErrors.length} errors, ${totalWarnings.length} warnings`);
+        Logger.info(`Total build analysis: ${totalErrors.length} errors, ${totalWarnings.length} warnings, stopped builds: ${hasStoppedBuild}`);
         
         Logger.info(`DEBUG: totalErrors = ${JSON.stringify(totalErrors)}`);
         Logger.info(`DEBUG: totalErrors.length = ${totalErrors.length}`);
         Logger.info(`DEBUG: totalErrors.length > 0 = ${totalErrors.length > 0}`);
+        Logger.info(`DEBUG: hasStoppedBuild = ${hasStoppedBuild}`);
+        
+        // Handle stopped builds first
+        if (hasStoppedBuild && totalErrors.length === 0) {
+          let message = `⏹️ TEST BUILD INTERRUPTED${hasArgs ? ` (test with arguments ${JSON.stringify(commandLineArguments)})` : ''}\n\nThe build was stopped or interrupted before completion.\n\n💡 This may happen when:\n  • The build was cancelled manually\n  • Xcode was closed during the build\n  • System resources were exhausted\n\nTry running the test again to complete it.`;
+          return { content: [{ type: 'text', text: message }] };
+        }
         
         if (totalErrors.length > 0) {
           let message = `❌ TEST BUILD FAILED (${totalErrors.length} errors)\n\nERRORS:\n`;
@@ -881,7 +900,13 @@ export class BuildTools {
     const results = await BuildLogParser.parseBuildLog(newLog.path);
     
     let message = `${runResult}\n\n`;
-    Logger.info(`Run build completed - ${results.errors.length} errors, ${results.warnings.length} warnings`);
+    Logger.info(`Run build completed - ${results.errors.length} errors, ${results.warnings.length} warnings, status: ${results.buildStatus || 'unknown'}`);
+    
+    // Handle stopped/interrupted builds
+    if (results.buildStatus === 'stopped') {
+      message += `⏹️ BUILD INTERRUPTED\n\nThe build was stopped or interrupted before completion.\n\n💡 This may happen when:\n  • The build was cancelled manually\n  • Xcode was closed during the build\n  • System resources were exhausted\n\nTry running the build again to complete it.`;
+      return { content: [{ type: 'text', text: message }] };
+    }
     
     if (results.errors.length > 0) {
       message += `❌ BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
