@@ -743,6 +743,9 @@ export class XcodeServer {
             }
             return result;
           case 'xcode_close_project':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
             try {
               const validationError = PathValidator.validateProjectPath(args.xcodeproj as string);
               if (validationError) return validationError;
