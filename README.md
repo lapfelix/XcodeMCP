@@ -90,6 +90,44 @@ npm run build
 npm start
 ```
 
+## CLI Usage
+
+XcodeMCP now includes a first-class CLI that allows running any tool as a one-shot command:
+
+```bash
+# Show help and available tools
+mcp --help
+mcp list-tools
+
+# Run a tool with flags
+mcp xcode-build --xcodeproj /path/to/Project.xcodeproj --scheme MyScheme
+
+# Get help for a specific tool
+mcp xcode-build --help
+
+# Use JSON input instead of flags
+mcp xcode-build --json-input '{"xcodeproj": "/path/to/Project.xcodeproj", "scheme": "MyScheme"}'
+
+# Output results in JSON format
+mcp --json xcode-health-check
+```
+
+### Quick Examples
+
+```bash
+# Check system health
+mcp xcode-health-check
+
+# Build a project
+mcp xcode-build --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj --scheme MyApp
+
+# Run tests
+mcp xcode-test --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj
+
+# Browse XCResult files
+mcp xcresult-browse --xcresult-path /path/to/result.xcresult
+```
+
 ## Available Tools
 
 **Project Management:**
