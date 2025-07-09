@@ -4,9 +4,14 @@ import { Command } from 'commander';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { callTool, getTools } from './mcp/index.js';
+import { XcodeServer } from './XcodeServer.js';
 import { Logger } from './utils/Logger.js';
-import type { ToolDefinition, SseEvent } from './mcp/index.js';
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: any;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -101,13 +106,12 @@ function formatResult(result: any, jsonOutput: boolean): string {
   return JSON.stringify(result, null, 2);
 }
 
-/**
- * Handle SSE events by writing to stderr
- */
-function handleSseEvent(event: SseEvent): void {
-  const eventData = `event:${event.type}\ndata:${JSON.stringify(event.data)}\n\n`;
-  process.stderr.write(eventData);
-}
+// Note: handleSseEvent is defined but not used in CLI-first architecture
+// Events are handled by the spawning process (MCP library)
+// function handleSseEvent(event: SseEvent): void {
+//   const eventData = `event:${event.type}\ndata:${JSON.stringify(event.data)}\n\n`;
+//   process.stderr.write(eventData);
+// }
 
 /**
  * Main CLI function
@@ -115,11 +119,75 @@ function handleSseEvent(event: SseEvent): void {
 async function main(): Promise<void> {
   try {
     const pkg = await loadPackageJson();
-    const tools = await getTools();
+    const server = new XcodeServer();
     
-    const program = new Command('mcp')
+    // Get tools from server directly - hardcoded for now
+    // This is a temporary solution while we transition to CLI-first architecture
+    const tools = [
+      {
+        name: 'xcode_open_project',
+        description: 'Open an Xcode project or workspace',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_close_project',
+        description: 'Close the currently active Xcode project or workspace (automatically stops any running actions first)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_build',
+        description: 'Build a specific Xcode project or workspace with the specified scheme',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+            scheme: {
+              type: 'string',
+              description: 'Name of the scheme to build',
+            },
+            destination: {
+              type: 'string',
+              description: 'Build destination (optional - uses active destination if not provided)',
+            },
+          },
+          required: ['xcodeproj', 'scheme'],
+        },
+      },
+      {
+        name: 'xcode_health_check',
+        description: 'Perform a comprehensive health check of the XcodeMCP environment and configuration',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      // Add more tools as needed
+    ];
+    
+    const program = new Command('xcodecontrol')
       .version(pkg.version)
-      .description('MCP one-shot CLI for Xcode tools')
+      .description('Command-line interface for Xcode automation and control')
       .option('--json', 'Output results in JSON format', false);
     
     // Add global help command
@@ -132,8 +200,10 @@ async function main(): Promise<void> {
     
     // Dynamically create subcommands for each tool
     for (const tool of tools) {
+      // Convert tool name: remove "xcode_" prefix and replace underscores with dashes
+      const commandName = tool.name.replace(/^xcode_/, '').replace(/_/g, '-');
       const cmd = program
-        .command(tool.name.replace(/_/g, '-'))
+        .command(commandName)
         .description(tool.description);
       
       // Add options based on the tool's input schema
@@ -180,10 +250,8 @@ async function main(): Promise<void> {
             }
           }
           
-          // Call the tool
-          const result = await callTool(tool.name, toolArgs, {
-            onEvent: handleSseEvent
-          });
+          // Call the tool directly on server
+          const result = await server.callToolDirect(tool.name, toolArgs);
           
           // Check if the result indicates an error
           let hasError = false;
@@ -233,9 +301,13 @@ async function main(): Promise<void> {
       .command('list-tools')
       .description('List all available tools')
       .action(() => {
-        console.log('Available tools:');
-        for (const tool of tools) {
-          console.log(`  ${tool.name.replace(/_/g, '-')} - ${tool.description}`);
+        if (program.opts().json) {
+          console.log(JSON.stringify(tools, null, 2));
+        } else {
+          console.log('Available tools:');
+          for (const tool of tools) {
+            console.log(`  ${tool.name.replace(/_/g, '-')} - ${tool.description}`);
+          }
         }
       });
     

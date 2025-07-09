@@ -1,7 +1,11 @@
-import { XcodeServer } from '../XcodeServer.js';
+import { spawn } from 'child_process';
 import { Logger } from '../utils/Logger.js';
 import { EventEmitter } from 'events';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface SseEvent {
   type: string;
@@ -19,16 +23,17 @@ export interface ToolDefinition {
 }
 
 export class McpLibrary extends EventEmitter {
-  private server: XcodeServer;
   private initialized = false;
+  private cliPath: string;
 
   constructor() {
     super();
-    this.server = new XcodeServer();
+    // Path to the CLI executable
+    this.cliPath = join(__dirname, '../cli.js');
   }
 
   /**
-   * Initialize the MCP server if not already initialized
+   * Initialize the MCP library if not already initialized
    */
   private async initialize(): Promise<void> {
     if (this.initialized) {
@@ -36,7 +41,8 @@ export class McpLibrary extends EventEmitter {
     }
 
     try {
-      await this.server.validateEnvironment();
+      // Test CLI is available by calling help
+      await this.spawnCli(['--help']);
       this.initialized = true;
       Logger.debug('MCP library initialized successfully');
     } catch (error) {
@@ -51,7 +57,31 @@ export class McpLibrary extends EventEmitter {
   public async getTools(): Promise<ToolDefinition[]> {
     await this.initialize();
     
-    // Return the tool definitions directly from the server setup
+    try {
+      // Get tools from CLI subprocess
+      const result = await this.spawnCli(['--json', 'list-tools']);
+      
+      if (result.exitCode !== 0) {
+        throw new Error(`Failed to get tools: ${result.stderr || result.stdout}`);
+      }
+      
+      // Parse and return tool definitions
+      const toolsData = JSON.parse(result.stdout);
+      if (Array.isArray(toolsData)) {
+        return toolsData.map(tool => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema
+        }));
+      }
+      
+      // Fallback to hardcoded tools if CLI doesn't return expected format
+      Logger.warn('CLI returned unexpected format, using fallback tool definitions');
+    } catch (error) {
+      Logger.error('Failed to get tools from CLI, using fallback:', error);
+    }
+    
+    // Fallback to hardcoded tool definitions
     return [
       {
         name: 'xcode_open_project',
@@ -480,8 +510,39 @@ export class McpLibrary extends EventEmitter {
   }
 
   /**
+   * Spawn CLI subprocess and execute command
+   */
+  private async spawnCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('node', [this.cliPath, ...args], {
+        stdio: ['inherit', 'pipe', 'pipe'],
+        env: process.env
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code) => {
+        resolve({ stdout, stderr, exitCode: code || 0 });
+      });
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  /**
    * Call a tool with the given name and arguments
-   * This bypasses the MCP protocol and calls the tool implementation directly
+   * This spawns the CLI subprocess to execute the tool
    */
   public async callTool(
     name: string,
@@ -493,21 +554,49 @@ export class McpLibrary extends EventEmitter {
     try {
       Logger.debug(`Calling tool: ${name} with args:`, args);
 
-      // Use the direct tool calling method
-      const result = await this.server.callToolDirect(name, args);
-
-      // Emit events if callback provided
-      if (options.onEvent) {
-        // For now, we'll emit a simple completion event
-        // In the future, we could enhance this to capture real progress events
-        options.onEvent({
-          type: 'progress',
-          data: { progress: 100, message: `Tool ${name} completed` }
-        });
+      // Convert tool name to CLI command name
+      const commandName = name.replace(/^xcode_/, '').replace(/_/g, '-');
+      
+      // Build CLI arguments
+      const cliArgs = ['--json', commandName, '--json-input', JSON.stringify(args)];
+      
+      // Execute CLI subprocess
+      const result = await this.spawnCli(cliArgs);
+      
+      // Parse events from stderr if callback provided
+      if (options.onEvent && result.stderr) {
+        const lines = result.stderr.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            const eventType = line.replace('event:', '');
+            const nextLine = lines[lines.indexOf(line) + 1];
+            if (nextLine?.startsWith('data:')) {
+              try {
+                const eventData = JSON.parse(nextLine.replace('data:', ''));
+                options.onEvent({ type: eventType, data: eventData });
+              } catch (parseError) {
+                Logger.debug('Failed to parse SSE event:', parseError);
+              }
+            }
+          }
+        }
       }
 
-      Logger.debug(`Tool ${name} completed successfully`);
-      return result;
+      // Handle CLI exit code
+      if (result.exitCode !== 0) {
+        throw new Error(`CLI command failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`);
+      }
+
+      // Parse JSON output from CLI
+      try {
+        const parsedResult = JSON.parse(result.stdout);
+        Logger.debug(`Tool ${name} completed successfully`);
+        return parsedResult;
+      } catch (parseError) {
+        // If JSON parsing fails, wrap stdout in text content
+        Logger.debug(`Tool ${name} completed with non-JSON output`);
+        return { content: [{ type: 'text', text: result.stdout }] };
+      }
     } catch (error) {
       Logger.error(`Tool ${name} failed:`, error);
       throw error;
@@ -515,10 +604,10 @@ export class McpLibrary extends EventEmitter {
   }
 
   /**
-   * Get server instance (for advanced use cases)
+   * Get CLI path (for advanced use cases)
    */
-  public getServer(): XcodeServer {
-    return this.server;
+  public getCliPath(): string {
+    return this.cliPath;
   }
 }
 
