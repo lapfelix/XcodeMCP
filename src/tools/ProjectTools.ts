@@ -129,18 +129,40 @@ export class ProjectTools {
     const validationError = PathValidator.validateProjectPath(projectPath);
     if (validationError) return validationError;
     
+    // Check for workspace preference: if we're opening a .xcodeproj file,
+    // check if there's a corresponding .xcworkspace file in the same directory
+    let actualPath = projectPath;
+    if (projectPath.endsWith('.xcodeproj')) {
+      const { existsSync } = await import('fs');
+      const workspacePath = projectPath.replace(/\.xcodeproj$/, '.xcworkspace');
+      if (existsSync(workspacePath)) {
+        actualPath = workspacePath;
+      }
+    }
+    
     // Ensure Xcode is running before trying to open project
     const xcodeError = await this.ensureXcodeIsRunning();
     if (xcodeError) return xcodeError;
     
     const script = `
       const app = Application('Xcode');
-      app.open(${JSON.stringify(projectPath)});
+      app.open(${JSON.stringify(actualPath)});
       'Project opened successfully';
     `;
     
-    const result = await JXAExecutor.execute(script);
-    return { content: [{ type: 'text', text: result }] };
+    try {
+      const result = await JXAExecutor.execute(script);
+      
+      // If we automatically chose a workspace over a project, indicate this in the response
+      if (actualPath !== projectPath && actualPath.endsWith('.xcworkspace')) {
+        return { content: [{ type: 'text', text: `Opened workspace instead of project: ${result}` }] };
+      }
+      
+      return { content: [{ type: 'text', text: result }] };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { content: [{ type: 'text', text: `Failed to open project: ${errorMessage}` }] };
+    }
   }
 
   public static async waitForProjectToLoad(maxRetries: number = 30, retryDelayMs: number = 1000): Promise<McpResult | null> {
@@ -313,6 +335,17 @@ export class ProjectTools {
     `;
     
     const result = await JXAExecutor.execute(script);
+    
+    // Parse the result to check if schemes array is empty
+    try {
+      const schemeInfo = JSON.parse(result);
+      if (Array.isArray(schemeInfo) && schemeInfo.length === 0) {
+        return { content: [{ type: 'text', text: 'No schemes found in the project' }] };
+      }
+    } catch (error) {
+      // If parsing fails, return the raw result
+    }
+    
     return { content: [{ type: 'text', text: result }] };
   }
 
@@ -423,6 +456,17 @@ export class ProjectTools {
     `;
     
     const result = await JXAExecutor.execute(script);
+    
+    // Parse the result to check if destinations array is empty
+    try {
+      const destInfo = JSON.parse(result);
+      if (Array.isArray(destInfo) && destInfo.length === 0) {
+        return { content: [{ type: 'text', text: 'No run destinations found for the project' }] };
+      }
+    } catch (error) {
+      // If parsing fails, return the raw result
+    }
+    
     return { content: [{ type: 'text', text: result }] };
   }
 }
