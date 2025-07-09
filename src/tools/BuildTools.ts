@@ -912,7 +912,6 @@ export class BuildTools {
       message += `❌ BUILD FAILED (${results.errors.length} errors)\n\nERRORS:\n`;
       results.errors.forEach(error => {
         message += `  • ${error}\n`;
-        Logger.error('Run build error:', error);
       });
       throw new McpError(
         ErrorCode.InternalError,
@@ -922,7 +921,6 @@ export class BuildTools {
       message += `⚠️ BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
       results.warnings.forEach(warning => {
         message += `  • ${warning}\n`;
-        Logger.warn('Run build warning:', warning);
       });
     } else {
       message += '✅ BUILD SUCCESSFUL - App should be launching';

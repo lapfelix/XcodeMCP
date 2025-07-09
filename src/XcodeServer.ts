@@ -976,7 +976,7 @@ export class XcodeServer {
         return { 
           content: [{ 
             type: 'text', 
-            text: `❌ ${name} failed: ${errorMessage}\n\n💡 If this persists, try running 'xcode_health_check' to diagnose potential configuration issues.`
+            text: `❌ ${name} failed: ${errorMessage}`
           }] 
         };
       }

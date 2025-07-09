@@ -551,7 +551,9 @@ async function main(): Promise<void> {
     const program = new Command('xcodecontrol')
       .version(pkg.version)
       .description('Command-line interface for Xcode automation and control')
-      .option('--json', 'Output results in JSON format', false);
+      .option('--json', 'Output results in JSON format', false)
+      .option('-v, --verbose', 'Enable verbose output (shows INFO logs)', false)
+      .option('-q, --quiet', 'Suppress all logs except errors', false);
     
     // Add global help command
     program
@@ -589,6 +591,16 @@ async function main(): Promise<void> {
       // Set up the action handler
       cmd.action(async (cliArgs: Record<string, any>) => {
         try {
+          // Set log level based on CLI options
+          const globalOpts = program.opts();
+          if (globalOpts.quiet) {
+            process.env.LOG_LEVEL = 'ERROR';
+          } else if (globalOpts.verbose) {
+            process.env.LOG_LEVEL = 'DEBUG';
+          } else {
+            process.env.LOG_LEVEL = 'WARN';  // Default: only show warnings and errors
+          }
+          
           let toolArgs: Record<string, unknown>;
           
           // Parse arguments from JSON input or CLI flags
