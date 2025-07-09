@@ -831,7 +831,6 @@ export class BuildTools {
     }
 
     const initialLog = await BuildLogParser.getLatestBuildLog(projectPath);
-    const initialTime = Date.now();
 
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
@@ -850,6 +849,9 @@ export class BuildTools {
     
     const runResult = await JXAExecutor.execute(script);
     
+    // Set initial time AFTER the run starts to avoid race conditions
+    const initialTime = Date.now();
+    
     // Check for and handle "replace existing build" alert
     await this._handleReplaceExistingBuildAlert();
 
@@ -860,8 +862,10 @@ export class BuildTools {
     while (attempts < maxAttempts) {
       newLog = await BuildLogParser.getLatestBuildLog(projectPath);
       
+      // Wait for a new build log that was created/modified after the run started
       if (newLog && (!initialLog || newLog.path !== initialLog.path || 
                      newLog.mtime.getTime() > initialTime)) {
+        Logger.info(`Found potential new build log: ${newLog.path}, modified: ${newLog.mtime.toISOString()}, initialTime: ${new Date(initialTime).toISOString()}`);
         break;
       }
       
@@ -873,6 +877,8 @@ export class BuildTools {
       return { content: [{ type: 'text', text: `${runResult}\n\nNote: Run triggered but no build log found (app may have launched without building)` }] };
     }
 
+    // Wait for the build to complete by monitoring the log file modifications
+    Logger.info(`Waiting for build to complete, monitoring log: ${newLog.path}`);
     let lastModified = 0;
     let stableCount = 0;
     attempts = 0;
@@ -884,12 +890,15 @@ export class BuildTools {
         const currentModified = currentLog.mtime.getTime();
         if (currentModified === lastModified) {
           stableCount++;
+          Logger.info(`Build log stable for ${stableCount} attempts (${stableCount * 500}ms)`);
           if (stableCount >= 6) {
+            Logger.info(`Build log stable for 3 seconds, assuming build complete`);
             break;
           }
         } else {
           lastModified = currentModified;
           stableCount = 0;
+          Logger.info(`Build log modified at ${new Date(currentModified).toISOString()}, resetting stability counter`);
         }
       }
       
