@@ -1015,6 +1015,67 @@ export class XcodeServer {
     return BuildLogParser.getLatestBuildLog(projectPath);
   }
 
+  // Direct method interfaces for testing/CLI compatibility
+  public async build(projectPath: string, schemeName = 'Debug', destination: string | null = null): Promise<import('./types/index.js').McpResult> {
+    const { BuildTools } = await import('./tools/BuildTools.js');
+    return BuildTools.build(projectPath, schemeName, destination, this.openProject.bind(this));
+  }
+
+  public async clean(projectPath: string): Promise<import('./types/index.js').McpResult> {
+    const { BuildTools } = await import('./tools/BuildTools.js');
+    return BuildTools.clean(projectPath, this.openProject.bind(this));
+  }
+
+  public async test(projectPath: string, commandLineArguments: string[] = []): Promise<import('./types/index.js').McpResult> {
+    const { BuildTools } = await import('./tools/BuildTools.js');
+    return BuildTools.test(projectPath, commandLineArguments, this.openProject.bind(this));
+  }
+
+  public async run(projectPath: string, commandLineArguments: string[] = []): Promise<import('./types/index.js').McpResult> {
+    const { BuildTools } = await import('./tools/BuildTools.js');
+    return BuildTools.run(projectPath, 'Debug', commandLineArguments, this.openProject.bind(this));
+  }
+
+  public async debug(projectPath: string, scheme: string, skipBuilding = false): Promise<import('./types/index.js').McpResult> {
+    const { BuildTools } = await import('./tools/BuildTools.js');
+    return BuildTools.debug(projectPath, scheme, skipBuilding, this.openProject.bind(this));
+  }
+
+  public async stop(): Promise<import('./types/index.js').McpResult> {
+    const { BuildTools } = await import('./tools/BuildTools.js');
+    return BuildTools.stop();
+  }
+
+  public async getSchemes(projectPath: string): Promise<import('./types/index.js').McpResult> {
+    const { ProjectTools } = await import('./tools/ProjectTools.js');
+    return ProjectTools.getSchemes(projectPath, this.openProject.bind(this));
+  }
+
+  public async getRunDestinations(projectPath: string): Promise<import('./types/index.js').McpResult> {
+    const { ProjectTools } = await import('./tools/ProjectTools.js');
+    return ProjectTools.getRunDestinations(projectPath, this.openProject.bind(this));
+  }
+
+  public async setActiveScheme(projectPath: string, schemeName: string): Promise<import('./types/index.js').McpResult> {
+    const { ProjectTools } = await import('./tools/ProjectTools.js');
+    return ProjectTools.setActiveScheme(projectPath, schemeName, this.openProject.bind(this));
+  }
+
+  public async getWorkspaceInfo(projectPath: string): Promise<import('./types/index.js').McpResult> {
+    const { InfoTools } = await import('./tools/InfoTools.js');
+    return InfoTools.getWorkspaceInfo(projectPath, this.openProject.bind(this));
+  }
+
+  public async getProjects(projectPath: string): Promise<import('./types/index.js').McpResult> {
+    const { InfoTools } = await import('./tools/InfoTools.js');
+    return InfoTools.getProjects(projectPath, this.openProject.bind(this));
+  }
+
+  public async openFile(filePath: string, lineNumber?: number): Promise<import('./types/index.js').McpResult> {
+    const { InfoTools } = await import('./tools/InfoTools.js');
+    return InfoTools.openFile(filePath, lineNumber);
+  }
+
   public async parseBuildLog(logPath: string, retryCount?: number, maxRetries?: number) {
     const { BuildLogParser } = await import('./utils/BuildLogParser.js');
     return BuildLogParser.parseBuildLog(logPath, retryCount, maxRetries);

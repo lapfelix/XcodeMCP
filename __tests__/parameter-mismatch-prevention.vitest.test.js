@@ -6,7 +6,7 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { XcodeMCPServer } from '../dist/index.js';
 
-describe.skip('Parameter Mismatch Prevention', () => {
+describe('Parameter Mismatch Prevention', () => {
   let server;
 
   beforeEach(() => {
