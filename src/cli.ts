@@ -121,8 +121,7 @@ async function main(): Promise<void> {
     const pkg = await loadPackageJson();
     const server = new XcodeServer();
     
-    // Get tools from server directly - hardcoded for now
-    // This is a temporary solution while we transition to CLI-first architecture
+    // Complete tool definitions (copied from XcodeServer.ts)
     const tools = [
       {
         name: 'xcode_open_project',
@@ -154,7 +153,7 @@ async function main(): Promise<void> {
       },
       {
         name: 'xcode_build',
-        description: 'Build a specific Xcode project or workspace with the specified scheme',
+        description: 'Build a specific Xcode project or workspace with the specified scheme. If destination is not provided, uses the currently active destination.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -175,6 +174,198 @@ async function main(): Promise<void> {
         },
       },
       {
+        name: 'xcode_get_schemes',
+        description: 'Get list of available schemes for a specific project',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_set_active_scheme',
+        description: 'Set the active scheme for a specific project',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+            schemeName: {
+              type: 'string',
+              description: 'Name of the scheme to activate',
+            },
+          },
+          required: ['xcodeproj', 'schemeName'],
+        },
+      },
+      {
+        name: 'xcode_clean',
+        description: 'Clean the build directory for a specific project',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_test',
+        description: 'Run tests for a specific project',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+            commandLineArguments: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Additional command line arguments',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_run',
+        description: 'Run a specific project with the specified scheme',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+            scheme: {
+              type: 'string',
+              description: 'Name of the scheme to run',
+            },
+            commandLineArguments: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Additional command line arguments',
+            },
+          },
+          required: ['xcodeproj', 'scheme'],
+        },
+      },
+      {
+        name: 'xcode_debug',
+        description: 'Start debugging session for a specific project',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+            scheme: {
+              type: 'string',
+              description: 'Scheme name (optional)',
+            },
+            skipBuilding: {
+              type: 'boolean',
+              description: 'Whether to skip building',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_stop',
+        description: 'Stop the current scheme action',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'find_xcresults',
+        description: 'Find all XCResult files for a specific project with timestamps and file information',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_get_run_destinations',
+        description: 'Get list of available run destinations for a specific project',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_get_workspace_info',
+        description: 'Get information about a specific workspace',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_get_projects',
+        description: 'Get list of projects in a specific workspace',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcodeproj: {
+              type: 'string',
+              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            },
+          },
+          required: ['xcodeproj'],
+        },
+      },
+      {
+        name: 'xcode_open_file',
+        description: 'Open a file in Xcode',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filePath: {
+              type: 'string',
+              description: 'Absolute path to the file to open',
+            },
+            lineNumber: {
+              type: 'number',
+              description: 'Optional line number to navigate to',
+            },
+          },
+          required: ['filePath'],
+        },
+      },
+      {
         name: 'xcode_health_check',
         description: 'Perform a comprehensive health check of the XcodeMCP environment and configuration',
         inputSchema: {
@@ -182,7 +373,179 @@ async function main(): Promise<void> {
           properties: {},
         },
       },
-      // Add more tools as needed
+      {
+        name: 'xcresult_browse',
+        description: 'Browse XCResult files - list all tests or show details for a specific test. Returns comprehensive test results including pass/fail status, failure details, and browsing instructions. Large console output (>20 lines or >2KB) is automatically saved to a temporary file.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcresult_path: {
+              type: 'string',
+              description: 'Absolute path to the .xcresult file',
+            },
+            test_id: {
+              type: 'string',
+              description: 'Optional test ID or index number to show details for a specific test',
+            },
+            include_console: {
+              type: 'boolean',
+              description: 'Whether to include console output and test activities (only used with test_id)',
+              default: false,
+            },
+          },
+          required: ['xcresult_path'],
+        },
+      },
+      {
+        name: 'xcresult_browser_get_console',
+        description: 'Get console output and test activities for a specific test in an XCResult file. Large output (>20 lines or >2KB) is automatically saved to a temporary file.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcresult_path: {
+              type: 'string',
+              description: 'Absolute path to the .xcresult file',
+            },
+            test_id: {
+              type: 'string',
+              description: 'Test ID or index number to get console output for',
+            },
+          },
+          required: ['xcresult_path', 'test_id'],
+        },
+      },
+      {
+        name: 'xcresult_summary',
+        description: 'Get a quick summary of test results from an XCResult file',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcresult_path: {
+              type: 'string',
+              description: 'Absolute path to the .xcresult file',
+            },
+          },
+          required: ['xcresult_path'],
+        },
+      },
+      {
+        name: 'xcresult_get_screenshot',
+        description: 'Get screenshot from a failed test at specific timestamp - extracts frame from video attachment using ffmpeg',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcresult_path: {
+              type: 'string',
+              description: 'Absolute path to the .xcresult file',
+            },
+            test_id: {
+              type: 'string',
+              description: 'Test ID or index number to get screenshot for',
+            },
+            timestamp: {
+              type: 'number',
+              description: 'Timestamp in seconds when to extract the screenshot. WARNING: Use a timestamp BEFORE the failure (e.g., if failure is at 30.71s, use 30.69s) as failure timestamps often show the home screen after the app has crashed or reset.',
+            },
+          },
+          required: ['xcresult_path', 'test_id', 'timestamp'],
+        },
+      },
+      {
+        name: 'xcresult_get_ui_hierarchy',
+        description: 'Get UI hierarchy attachment from test. Returns raw accessibility tree (best for AI), slim AI-readable JSON (default), or full JSON.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcresult_path: {
+              type: 'string',
+              description: 'Absolute path to the .xcresult file',
+            },
+            test_id: {
+              type: 'string',
+              description: 'Test ID or index number to get UI hierarchy for',
+            },
+            timestamp: {
+              type: 'number',
+              description: 'Optional timestamp in seconds to find the closest UI snapshot. If not provided, uses the first available UI snapshot.',
+            },
+            full_hierarchy: {
+              type: 'boolean',
+              description: 'Set to true to get the full hierarchy (several MB). Default is false for AI-readable slim version.',
+            },
+            raw_format: {
+              type: 'boolean',
+              description: 'Set to true to get the raw accessibility tree text (most AI-friendly). Default is false for JSON format.',
+            },
+          },
+          required: ['xcresult_path', 'test_id'],
+        },
+      },
+      {
+        name: 'xcresult_get_ui_element',
+        description: 'Get full details of a specific UI element by index from a previously exported UI hierarchy JSON file',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            hierarchy_json_path: {
+              type: 'string',
+              description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult_get_ui_hierarchy)',
+            },
+            element_index: {
+              type: 'number',
+              description: 'Index of the element to get details for (the "j" value from the slim hierarchy)',
+            },
+            include_children: {
+              type: 'boolean',
+              description: 'Whether to include children in the response. Defaults to false.',
+            },
+          },
+          required: ['hierarchy_json_path', 'element_index'],
+        },
+      },
+      {
+        name: 'xcresult_list_attachments',
+        description: 'List all attachments for a specific test - shows attachment names, types, and indices for export',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcresult_path: {
+              type: 'string',
+              description: 'Absolute path to the .xcresult file',
+            },
+            test_id: {
+              type: 'string',
+              description: 'Test ID or index number to list attachments for',
+            },
+          },
+          required: ['xcresult_path', 'test_id'],
+        },
+      },
+      {
+        name: 'xcresult_export_attachment',
+        description: 'Export a specific attachment by index - can convert App UI hierarchy attachments to JSON',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            xcresult_path: {
+              type: 'string',
+              description: 'Absolute path to the .xcresult file',
+            },
+            test_id: {
+              type: 'string',
+              description: 'Test ID or index number that contains the attachment',
+            },
+            attachment_index: {
+              type: 'number',
+              description: 'Index number of the attachment to export (1-based, from xcresult_list_attachments)',
+            },
+            convert_to_json: {
+              type: 'boolean',
+              description: 'If true and attachment is an App UI hierarchy, convert to JSON format',
+            },
+          },
+          required: ['xcresult_path', 'test_id', 'attachment_index'],
+        },
+      },
     ];
     
     const program = new Command('xcodecontrol')
