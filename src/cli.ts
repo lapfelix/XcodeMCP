@@ -296,20 +296,6 @@ async function main(): Promise<void> {
       });
     }
     
-    // Add a special command to list all available tools
-    program
-      .command('list-tools')
-      .description('List all available tools')
-      .action(() => {
-        if (program.opts().json) {
-          console.log(JSON.stringify(tools, null, 2));
-        } else {
-          console.log('Available tools:');
-          for (const tool of tools) {
-            console.log(`  ${tool.name.replace(/_/g, '-')} - ${tool.description}`);
-          }
-        }
-      });
     
     // Parse command line arguments
     await program.parseAsync(process.argv);
