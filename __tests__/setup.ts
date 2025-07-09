@@ -76,7 +76,20 @@ vi.mock('child_process', () => ({
 }));
 
 vi.mock('fs', () => ({
-  existsSync: vi.fn().mockReturnValue(true),
+  existsSync: vi.fn().mockImplementation((path: string) => {
+    // Only return true for specific test files that are supposed to exist
+    if (path.includes('/Users/test/MyApp/MyApp.xcodeproj') || 
+        path.includes('/Users/test/MyWorkspace/MyWorkspace.xcworkspace') ||
+        path.includes('/Users/test/Dual/Dual.xcodeproj') ||
+        path.includes('/Users/test/Dual/Dual.xcworkspace')) {
+      return true;
+    }
+    // For MyApp project, don't return true for the workspace - it doesn't exist
+    if (path.includes('/Users/test/MyApp/MyApp.xcworkspace')) {
+      return false;
+    }
+    return false;
+  }),
   readFileSync: vi.fn().mockReturnValue('{}'),
   readdirSync: vi.fn().mockReturnValue([]),
   statSync: vi.fn().mockReturnValue({ 

@@ -110,7 +110,7 @@ describe('CLI Integration Tests', () => {
       ])
     ).rejects.toMatchObject({
       exitCode: 1,
-      stderr: expect.stringContaining('failed')
+      stderr: expect.stringContaining('does not exist')
     });
   });
 

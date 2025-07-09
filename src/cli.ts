@@ -211,7 +211,11 @@ async function main(): Promise<void> {
           
           // Output the result
           const output = formatResult(result, program.opts().json);
-          console.log(output);
+          if (hasError) {
+            console.error(output);
+          } else {
+            console.log(output);
+          }
           
           // Exit with appropriate code
           process.exit(hasError ? 1 : 0);
@@ -241,7 +245,8 @@ async function main(): Promise<void> {
   } catch (error) {
     Logger.error('CLI initialization failed:', error);
     console.error('❌ Failed to initialize CLI:', error);
-    process.exit(1);
+    // Re-throw the error so it can be caught by tests
+    throw error;
   }
 }
 

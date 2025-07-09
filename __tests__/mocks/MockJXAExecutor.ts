@@ -162,7 +162,12 @@ export class MockJXAExecutor {
             // Simulate delay for opening project
             await new Promise(resolve => setTimeout(resolve, 100));
             
-            // Return different responses based on file type
+            // Check if this is the specific openProject script that ends with 'Project opened successfully'
+            if (script.includes("'Project opened successfully'")) {
+              return 'Project opened successfully';
+            }
+            
+            // Return different responses based on file type (for other scripts)
             if (projectPath.endsWith('.xcodeproj')) {
               // console.log('Returning true for xcodeproj from .open condition');
               return 'true';
@@ -178,6 +183,7 @@ export class MockJXAExecutor {
       }
       
       // Handle the actual openProject script that expects "Project opened successfully"
+      // This must be checked before the more general pattern
       if (script.includes("'Project opened successfully'")) {
         // console.log('Matched openProject script condition');
         const pathMatch = script.match(/app\.open\(([^)]+)\)/);
@@ -190,36 +196,34 @@ export class MockJXAExecutor {
           this.state.activeProject = projectPath;
           this.state.isRunning = true;
           
-          // Return different responses based on file type
-          if (projectPath.endsWith('.xcodeproj')) {
-            // console.log('Returning true for xcodeproj');
-            return 'true';
-          } else if (projectPath.endsWith('.xcworkspace')) {
-            // console.log('Returning Project opened successfully for xcworkspace');
-            return 'Project opened successfully';
-          } else {
-            // console.log('Returning Project opened successfully for other');
-            return 'Project opened successfully';
-          }
+          // The script always ends with 'Project opened successfully' regardless of file type
+          // console.log('Returning Project opened successfully');
+          return 'Project opened successfully';
         }
       }
       
-      // Handle the openProject script pattern more generally
+      // Handle the openProject script pattern more generally (for other cases)
       if (script.includes('const app = Application(') && script.includes('app.open(')) {
+        // console.log('Matched general openProject script pattern');
         const pathMatch = script.match(/app\.open\(([^)]+)\)/);
         if (pathMatch) {
           let projectPath = pathMatch[1];
+          // console.log('General pattern extracted path:', projectPath);
           // Remove quotes if present
           projectPath = projectPath.replace(/^["']|["']$/g, '');
+          // console.log('General pattern cleaned path:', projectPath);
           this.state.activeProject = projectPath;
           this.state.isRunning = true;
           
           // Return different responses based on file type
           if (projectPath.endsWith('.xcodeproj')) {
+            // console.log('General pattern returning true for xcodeproj');
             return 'true';
           } else if (projectPath.endsWith('.xcworkspace')) {
+            // console.log('General pattern returning Project opened successfully for xcworkspace');
             return 'Project opened successfully';
           } else {
+            // console.log('General pattern returning Project opened successfully for other');
             return 'Project opened successfully';
           }
         }

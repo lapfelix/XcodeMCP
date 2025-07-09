@@ -67,7 +67,7 @@ describe('ProjectTools', () => {
       const result = await ProjectTools.openProject(projectPath);
 
       expect(result.content).toEqual([
-        { type: 'text', text: 'true' }
+        { type: 'text', text: 'Project opened successfully' }
       ]);
       // Use the global mock from setup.ts
       const globalMock = getGlobalJXAMock();
