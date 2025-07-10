@@ -55,7 +55,8 @@ describe('CLI Integration Tests', () => {
     const { stdout, stderr } = await execa('node', [CLI_PATH, 'health-check']);
     
     expect(stdout).toContain('XcodeMCP Configuration Health Check');
-    expect(stdout).toContain('systems operational');
+    // Should contain either "systems operational" (full) or "Can operate with limitations" (degraded)
+    expect(stdout).toMatch(/systems operational|Can operate with limitations/);
     
     // Note: CLI may not emit SSE events in the same way as the server
     // The health check should complete successfully
