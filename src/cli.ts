@@ -563,6 +563,19 @@ async function main(): Promise<void> {
         program.help();
       });
     
+    // Add list-tools command for compatibility
+    program
+      .command('list-tools')
+      .description('List all available tools')
+      .action(() => {
+        console.log('Available tools:');
+        console.log('');
+        for (const tool of tools) {
+          const commandName = tool.name.replace(/^xcode_/, '').replace(/_/g, '-');
+          console.log(`  ${commandName.padEnd(30)} ${tool.description}`);
+        }
+      });
+    
     // Dynamically create subcommands for each tool
     for (const tool of tools) {
       // Convert tool name: remove "xcode_" prefix and replace underscores with dashes
@@ -634,19 +647,28 @@ async function main(): Promise<void> {
             for (const item of result.content) {
               if (item.type === 'text' && item.text) {
                 const text = item.text;
-                // Check for common error patterns
-                if (text.includes('❌') || 
-                    text.includes('does not exist') ||
-                    text.includes('failed') ||
-                    text.includes('error') ||
-                    text.includes('Error') ||
-                    text.includes('missing required parameter') ||
-                    text.includes('cannot find') ||
-                    text.includes('not found') ||
-                    text.includes('invalid') ||
-                    text.includes('Invalid')) {
-                  hasError = true;
-                  break;
+                
+                // Special case for health-check: don't treat degraded mode as error
+                if (tool.name === 'xcode_health_check') {
+                  // Only treat as error if there are critical failures
+                  hasError = text.includes('⚠️  CRITICAL ERRORS DETECTED') || 
+                            text.includes('❌ OS:') || 
+                            text.includes('❌ OSASCRIPT:');
+                } else {
+                  // Check for common error patterns
+                  if (text.includes('❌') || 
+                      text.includes('does not exist') ||
+                      text.includes('failed') ||
+                      text.includes('error') ||
+                      text.includes('Error') ||
+                      text.includes('missing required parameter') ||
+                      text.includes('cannot find') ||
+                      text.includes('not found') ||
+                      text.includes('invalid') ||
+                      text.includes('Invalid')) {
+                    hasError = true;
+                    break;
+                  }
                 }
               }
             }

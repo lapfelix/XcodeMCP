@@ -30,9 +30,9 @@ describe('CLI Integration Tests', () => {
     const { stdout } = await execa('node', [CLI_PATH, 'list-tools']);
     
     expect(stdout).toContain('Available tools:');
-    expect(stdout).toContain('xcode-open-project');
-    expect(stdout).toContain('xcode-build');
-    expect(stdout).toContain('xcode-health-check');
+    expect(stdout).toContain('open-project');
+    expect(stdout).toContain('build');
+    expect(stdout).toContain('health-check');
   });
 
   it('should show help for individual tools', async () => {
@@ -130,10 +130,10 @@ describe('CLI Integration Tests', () => {
   it('should convert tool names with underscores to dashes', async () => {
     const { stdout } = await execa('node', [CLI_PATH, 'list-tools']);
     
-    // Tool names in list-tools output show full names with xcode- prefix
-    expect(stdout).toContain('xcode-open-project');
-    expect(stdout).toContain('xcode-close-project');
-    expect(stdout).toContain('xcode-build');
+    // Tool names in list-tools output show CLI command names
+    expect(stdout).toContain('open-project');
+    expect(stdout).toContain('close-project');
+    expect(stdout).toContain('build');
   });
 
   it('should handle array parameters correctly', async () => {
