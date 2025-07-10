@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/xcodemcp.svg)](https://www.npmjs.com/package/xcodemcp)
 [![Test Status](https://github.com/lapfelix/XcodeMCP/actions/workflows/test.yml/badge.svg)](https://github.com/lapfelix/XcodeMCP/actions/workflows/test.yml)
 
-Model Context Protocol (MCP) server that controls Xcode directly through JavaScript for Automation (JXA).
+Model Context Protocol (MCP) server that controls Xcode directly through JavaScript for Automation (JXA). Available as both an MCP server and a standalone CLI.
 
 ## What it does
 
@@ -12,6 +12,7 @@ Model Context Protocol (MCP) server that controls Xcode directly through JavaScr
 - Parses build logs with precise error locations using [XCLogParser](https://github.com/MobileNativeFoundation/XCLogParser)
 - Provides comprehensive environment validation and health checks
 - Supports graceful degradation when optional dependencies are missing
+- **NEW**: Includes a full-featured CLI with 100% MCP server feature parity
 
 ## Requirements
 
@@ -20,6 +21,10 @@ Model Context Protocol (MCP) server that controls Xcode directly through JavaScr
 - XCLogParser (recommended): `brew install xclogparser`
 
 ## Usage
+
+XcodeMCP can be used in two ways:
+1. **MCP Server**: Integrate with Claude Desktop, VS Code, or other MCP clients
+2. **CLI Tool**: Run commands directly from the terminal with `xcodecontrol`
 
 ### Quick Install
 
@@ -92,41 +97,83 @@ npm start
 
 ## CLI Usage
 
-XcodeMCP now includes a first-class CLI that allows running any tool as a one-shot command:
+XcodeMCP includes a powerful CLI that provides 100% feature parity with the MCP server, allowing you to run any tool as a one-shot command:
+
+### Installation
+
+Install globally to use the CLI:
+```bash
+npm install -g xcodemcp
+```
+
+### Basic Usage
 
 ```bash
 # Show help and available tools
-mcp --help
-mcp list-tools
+xcodecontrol --help
 
-# Run a tool with flags
-mcp xcode-build --xcodeproj /path/to/Project.xcodeproj --scheme MyScheme
+# Run a tool with flags  
+xcodecontrol build --xcodeproj /path/to/Project.xcodeproj --scheme MyScheme
 
 # Get help for a specific tool
-mcp xcode-build --help
+xcodecontrol build --help
 
 # Use JSON input instead of flags
-mcp xcode-build --json-input '{"xcodeproj": "/path/to/Project.xcodeproj", "scheme": "MyScheme"}'
+xcodecontrol build --json-input '{"xcodeproj": "/path/to/Project.xcodeproj", "scheme": "MyScheme"}'
 
 # Output results in JSON format
-mcp --json xcode-health-check
+xcodecontrol --json health-check
+```
+
+### Verbosity Control
+
+Control logging output with verbosity flags:
+
+```bash
+# Verbose mode (shows INFO and DEBUG logs)
+xcodecontrol -v build --xcodeproj /path/to/Project.xcodeproj --scheme MyScheme
+
+# Quiet mode (only errors)
+xcodecontrol -q test --xcodeproj /path/to/Project.xcodeproj
+
+# Default mode (warnings and errors only)
+xcodecontrol run --xcodeproj /path/to/Project.xcodeproj --scheme MyScheme
 ```
 
 ### Quick Examples
 
 ```bash
 # Check system health
-mcp xcode-health-check
+xcodecontrol health-check
 
 # Build a project
-mcp xcode-build --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj --scheme MyApp
+xcodecontrol build --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj --scheme MyApp
+
+# Run the app
+xcodecontrol run --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj --scheme MyApp
 
 # Run tests
-mcp xcode-test --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj
+xcodecontrol test --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj
+
+# Clean build directory
+xcodecontrol clean --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj
 
 # Browse XCResult files
-mcp xcresult-browse --xcresult-path /path/to/result.xcresult
+xcodecontrol xcresult-browse --xcresult-path /path/to/result.xcresult
+
+# Get UI hierarchy from test failure
+xcodecontrol xcresult-get-ui-hierarchy --xcresult-path /path/to/result.xcresult --test-id "MyTest/testMethod()" --timestamp 30.5
 ```
+
+### Tool Name Mapping
+
+CLI commands use kebab-case instead of underscores:
+- `xcode_build` → `build`
+- `xcode_test` → `test`  
+- `xcode_run` → `run`
+- `xcode_health_check` → `health-check`
+- `xcresult_browse` → `xcresult-browse`
+- `find_xcresults` → `find-xcresults`
 
 ## Available Tools
 
