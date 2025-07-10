@@ -830,7 +830,7 @@ export class BuildTools {
       return { content: [{ type: 'text', text: `Failed to set scheme '${schemeName}': ${errorMessage}` }] };
     }
 
-    const initialLog = await BuildLogParser.getLatestBuildLog(projectPath);
+    // Note: No longer need to track initial log since we use AppleScript completion detection
 
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
@@ -849,63 +849,83 @@ export class BuildTools {
     
     const runResult = await JXAExecutor.execute(script);
     
-    // Set initial time AFTER the run starts to avoid race conditions
-    const initialTime = Date.now();
+    // Extract the action ID from the result
+    const actionIdMatch = runResult.match(/Result ID: (.+)/);
+    const actionId = actionIdMatch ? actionIdMatch[1] : null;
+    
+    if (!actionId) {
+      return { content: [{ type: 'text', text: `${runResult}\n\nError: Could not extract action ID from run result` }] };
+    }
+    
+    Logger.info(`Run started with action ID: ${actionId}`);
     
     // Check for and handle "replace existing build" alert
     await this._handleReplaceExistingBuildAlert();
 
-    let newLog = null;
-    let attempts = 0;
-    const maxAttempts = 60;
-
-    while (attempts < maxAttempts) {
-      newLog = await BuildLogParser.getLatestBuildLog(projectPath);
-      
-      // Wait for a new build log that was created/modified after the run started
-      if (newLog && (!initialLog || newLog.path !== initialLog.path || 
-                     newLog.mtime.getTime() > initialTime)) {
-        Logger.info(`Found potential new build log: ${newLog.path}, modified: ${newLog.mtime.toISOString()}, initialTime: ${new Date(initialTime).toISOString()}`);
-        break;
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      attempts++;
-    }
-
-    if (!newLog) {
-      return { content: [{ type: 'text', text: `${runResult}\n\nNote: Run triggered but no build log found (app may have launched without building)` }] };
-    }
-
-    // Wait for the build to complete by monitoring the log file modifications
-    Logger.info(`Waiting for build to complete, monitoring log: ${newLog.path}`);
-    let lastModified = 0;
-    let stableCount = 0;
-    attempts = 0;
-    const buildMaxAttempts = 7200; // 1 hour max for run operation build (600 attempts × 500ms = 5min -> 7200 × 500ms = 1hr)
-
-    while (attempts < buildMaxAttempts) {
-      const currentLog = await BuildLogParser.getLatestBuildLog(projectPath);
-      if (currentLog) {
-        const currentModified = currentLog.mtime.getTime();
-        if (currentModified === lastModified) {
-          stableCount++;
-          Logger.info(`Build log stable for ${stableCount} attempts (${stableCount * 500}ms)`);
-          if (stableCount >= 6) {
-            Logger.info(`Build log stable for 3 seconds, assuming build complete`);
-            break;
-          }
-        } else {
-          lastModified = currentModified;
-          stableCount = 0;
-          Logger.info(`Build log modified at ${new Date(currentModified).toISOString()}, resetting stability counter`);
+    // Monitor run completion using AppleScript instead of build log detection
+    Logger.info(`Monitoring run completion using AppleScript for action ID: ${actionId}`);
+    const maxRunTime = 3600000; // 1 hour safety timeout
+    const runStartTime = Date.now();
+    let runCompleted = false;
+    let monitoringSeconds = 0;
+    
+    while (!runCompleted && (Date.now() - runStartTime) < maxRunTime) {
+      try {
+        // Check run completion via AppleScript every 10 seconds
+        const checkScript = `
+          (function() {
+            const app = Application('Xcode');
+            const workspace = app.activeWorkspaceDocument();
+            if (!workspace) return 'No workspace';
+            
+            const actions = workspace.schemeActionResults();
+            for (let i = 0; i < actions.length; i++) {
+              const action = actions[i];
+              if (action.id() === "${actionId}") {
+                const status = action.status();
+                const completed = action.completed();
+                return status + ':' + completed;
+              }
+            }
+            return 'Action not found';
+          })()
+        `;
+        
+        const result = await JXAExecutor.execute(checkScript, 15000);
+        const [status, completed] = result.split(':');
+        
+        // Log progress every 2 minutes
+        if (monitoringSeconds % 120 === 0) {
+          Logger.info(`Run monitoring: ${Math.floor(monitoringSeconds/60)}min - Action ${actionId}: status=${status}, completed=${completed}`);
         }
+        
+        // Check if run is complete
+        if (completed === 'true' && (status === 'succeeded' || status === 'failed' || status === 'cancelled' || status === 'error occurred')) {
+          runCompleted = true;
+          Logger.info(`Run completed after ${Math.floor(monitoringSeconds/60)} minutes: status=${status}`);
+          break;
+        }
+        
+      } catch (error) {
+        Logger.warn(`Run monitoring error at ${Math.floor(monitoringSeconds/60)}min: ${error instanceof Error ? error.message : error}`);
       }
       
-      await new Promise(resolve => setTimeout(resolve, 500));
-      attempts++;
+      // Wait 10 seconds before next check
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      monitoringSeconds += 10;
     }
-
+    
+    if (!runCompleted) {
+      Logger.warn('Run monitoring reached 1-hour timeout - proceeding anyway');
+    }
+    
+    // Now find the build log that was created during this run
+    const newLog = await BuildLogParser.getLatestBuildLog(projectPath);
+    if (!newLog) {
+      return { content: [{ type: 'text', text: `${runResult}\n\nNote: Run completed but no build log found (app may have launched without building)` }] };
+    }
+    
+    Logger.info(`Run completed, parsing build log: ${newLog.path}`);
     const results = await BuildLogParser.parseBuildLog(newLog.path);
     
     let message = `${runResult}\n\n`;
