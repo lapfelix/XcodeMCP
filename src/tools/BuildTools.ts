@@ -899,11 +899,22 @@ export class BuildTools {
           Logger.info(`Run monitoring: ${Math.floor(monitoringSeconds/60)}min - Action ${actionId}: status=${status}, completed=${completed}`);
         }
         
-        // Check if run is complete
-        if (completed === 'true' && (status === 'succeeded' || status === 'failed' || status === 'cancelled' || status === 'error occurred')) {
+        // For run actions, we need different completion logic than build/test
+        // Run actions stay "running" even after successful app launch
+        if (completed === 'true' && (status === 'failed' || status === 'cancelled' || status === 'error occurred')) {
+          // Run failed/cancelled - this is a true completion
           runCompleted = true;
           Logger.info(`Run completed after ${Math.floor(monitoringSeconds/60)} minutes: status=${status}`);
           break;
+        } else if (status === 'running' && monitoringSeconds >= 60) {
+          // If still running after 60 seconds, assume the app launched successfully
+          // We'll check for build errors in the log parsing step
+          runCompleted = true;
+          Logger.info(`Run appears successful after ${Math.floor(monitoringSeconds/60)} minutes (app likely launched)`);
+          break;
+        } else if (status === 'succeeded') {
+          // This might happen briefly during transition, wait a bit more
+          Logger.info(`Run status shows 'succeeded', waiting to see if it transitions to 'running'...`);
         }
         
       } catch (error) {
