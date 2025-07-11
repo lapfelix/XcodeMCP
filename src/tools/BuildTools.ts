@@ -671,26 +671,26 @@ export class BuildTools {
             const analysis = await parser.analyzeXCResult();
             if (analysis.failedTests > 0) {
               message += `💡 Inspect test results:\n`;
-              message += `  • Browse results: xcresult_browse <path>\n`;
-              message += `  • Get console output: xcresult_browser_get_console <path> <test-id>\n`;
-              message += `  • Get screenshots: xcresult_get_screenshot <path> <test-id> <timestamp>\n`;
-              message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id> <timestamp>\n`;
-              message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
-              message += `  • List attachments: xcresult_list_attachments <path> <test-id>\n`;
-              message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
-              message += `  • Quick summary: xcresult_summary <path>\n`;
+              message += `  • Browse results: xcresult-browse --xcresult-path <path>\n`;
+              message += `  • Get console output: xcresult-browser-get-console --xcresult-path <path> --test-id <test-id>\n`;
+              message += `  • Get screenshots: xcresult-get-screenshot --xcresult-path <path> --test-id <test-id> --timestamp <timestamp>\n`;
+              message += `  • Get UI hierarchy: xcresult-get-ui-hierarchy --xcresult-path <path> --test-id <test-id> --timestamp <timestamp>\n`;
+              message += `  • Get element details: xcresult-get-ui-element --hierarchy-json <hierarchy-json> --index <index>\n`;
+              message += `  • List attachments: xcresult-list-attachments --xcresult-path <path> --test-id <test-id>\n`;
+              message += `  • Export attachments: xcresult-export-attachment --xcresult-path <path> --test-id <test-id> --index <index>\n`;
+              message += `  • Quick summary: xcresult-summary --xcresult-path <path>\n`;
               message += `\n💡 Tip: Use console output to find failure timestamps for screenshots and UI hierarchies`;
             } else {
               message += `✅ All tests passed!\n\n`;
               message += `💡 Explore test results:\n`;
-              message += `  • Browse results: xcresult_browse <path>\n`;
-              message += `  • Get console output: xcresult_browser_get_console <path> <test-id>\n`;
-              message += `  • Get screenshots: xcresult_get_screenshot <path> <test-id> <timestamp>\n`;
-              message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id> <timestamp>\n`;
-              message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
-              message += `  • List attachments: xcresult_list_attachments <path> <test-id>\n`;
-              message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
-              message += `  • Quick summary: xcresult_summary <path>`;
+              message += `  • Browse results: xcresult-browse --xcresult-path <path>\n`;
+              message += `  • Get console output: xcresult-browser-get-console --xcresult-path <path> --test-id <test-id>\n`;
+              message += `  • Get screenshots: xcresult-get-screenshot --xcresult-path <path> --test-id <test-id> --timestamp <timestamp>\n`;
+              message += `  • Get UI hierarchy: xcresult-get-ui-hierarchy --xcresult-path <path> --test-id <test-id> --timestamp <timestamp>\n`;
+              message += `  • Get element details: xcresult-get-ui-element --hierarchy-json <hierarchy-json> --index <index>\n`;
+              message += `  • List attachments: xcresult-list-attachments --xcresult-path <path> --test-id <test-id>\n`;
+              message += `  • Export attachments: xcresult-export-attachment --xcresult-path <path> --test-id <test-id> --index <index>\n`;
+              message += `  • Quick summary: xcresult-summary --xcresult-path <path>`;
             }
             
             return { content: [{ type: 'text', text: message }] };

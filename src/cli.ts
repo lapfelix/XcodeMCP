@@ -33,7 +33,9 @@ async function loadPackageJson(): Promise<{ version: string }> {
  * Convert JSON schema property to commander option
  */
 function schemaPropertyToOption(name: string, property: any): { flags: string; description: string; defaultValue?: any } {
-  const flags = property.type === 'boolean' ? `--${name}` : `--${name} <value>`;
+  // Convert underscores to dashes for CLI consistency
+  const dashName = name.replace(/_/g, '-');
+  const flags = property.type === 'boolean' ? `--${dashName}` : `--${dashName} <value>`;
   const description = property.description || `${name} parameter`;
   
   const option = { flags, description };
@@ -56,7 +58,9 @@ function parseToolArgs(tool: ToolDefinition, cliArgs: Record<string, any>): Reco
   
   for (const [propName, propSchema] of Object.entries(tool.inputSchema.properties)) {
     const propDef = propSchema as any;
-    const cliValue = cliArgs[propName];
+    // Convert underscores to dashes to match CLI argument names
+    const dashPropName = propName.replace(/_/g, '-');
+    const cliValue = cliArgs[dashPropName];
     
     if (cliValue !== undefined) {
       // Handle array types
