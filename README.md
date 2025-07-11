@@ -125,6 +125,24 @@ xcodecontrol build --json-input '{"xcodeproj": "/path/to/Project.xcodeproj", "sc
 xcodecontrol --json health-check
 ```
 
+### Path Resolution
+
+The CLI supports both absolute and relative paths for convenience:
+
+```bash
+# Absolute paths (traditional)
+xcodecontrol build --xcodeproj /Users/dev/MyApp/MyApp.xcodeproj --scheme MyApp
+
+# Relative paths (NEW in v2.0.0)
+xcodecontrol build --xcodeproj MyApp.xcodeproj --scheme MyApp
+xcodecontrol build --xcodeproj ../OtherProject/OtherProject.xcodeproj --scheme OtherApp
+
+# Works with file paths too
+xcodecontrol open-file --filePath src/ViewController.swift --lineNumber 42
+```
+
+Relative paths are resolved from your current working directory, making the CLI much more convenient to use when working within project directories.
+
 ### Verbosity Control
 
 Control logging output with verbosity flags:

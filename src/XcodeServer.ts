@@ -289,7 +289,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
               },
               required: ['xcodeproj'],
@@ -303,7 +303,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
               },
               required: ['xcodeproj'],
@@ -317,7 +317,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file to build (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
                 scheme: {
                   type: 'string',
@@ -339,7 +339,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
               },
               required: ['xcodeproj'],
@@ -353,7 +353,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
                 schemeName: {
                   type: 'string',
@@ -371,7 +371,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
               },
               required: ['xcodeproj'],
@@ -385,7 +385,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
                 commandLineArguments: {
                   type: 'array',
@@ -404,7 +404,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
                 scheme: {
                   type: 'string',
@@ -427,7 +427,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
                 scheme: {
                   type: 'string',
@@ -457,7 +457,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
               },
               required: ['xcodeproj'],
@@ -471,7 +471,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
               },
               required: ['xcodeproj'],
@@ -485,7 +485,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
               },
               required: ['xcodeproj'],
@@ -499,7 +499,7 @@ export class XcodeServer {
               properties: {
                 xcodeproj: {
                   type: 'string',
-                  description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+                  description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
               },
               required: ['xcodeproj'],
@@ -513,7 +513,7 @@ export class XcodeServer {
               properties: {
                 filePath: {
                   type: 'string',
-                  description: 'Absolute path to the file to open',
+                  description: 'Path to the file to open - supports both absolute (/path/to/file.swift) and relative (src/file.swift) paths',
                 },
                 lineNumber: {
                   type: 'number',
@@ -710,6 +710,22 @@ export class XcodeServer {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request: any): Promise<CallToolResult> => {
       const { name, arguments: args = {} } = request.params as { name: string; arguments?: Record<string, unknown> };
+
+      // Resolve relative paths to absolute paths
+      if (args.xcodeproj && typeof args.xcodeproj === 'string') {
+        const { resolvedPath, error } = PathValidator.resolveAndValidateProjectPath(args.xcodeproj as string, 'xcodeproj');
+        if (error) {
+          return error;
+        }
+        args.xcodeproj = resolvedPath;
+      }
+      
+      if (args.filePath && typeof args.filePath === 'string') {
+        const path = await import('path');
+        if (!path.default.isAbsolute(args.filePath)) {
+          args.filePath = path.default.resolve(process.cwd(), args.filePath);
+        }
+      }
 
       try {
         // Handle health check tool first (no environment validation needed)
@@ -1097,6 +1113,23 @@ export class XcodeServer {
    */
   public async callToolDirect(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
     // This is essentially the same logic as the CallToolRequestSchema handler
+    
+    // Resolve relative paths to absolute paths (this is actually handled by CLI now, but keep for safety)
+    if (args.xcodeproj && typeof args.xcodeproj === 'string') {
+      const { resolvedPath, error } = PathValidator.resolveAndValidateProjectPath(args.xcodeproj as string, 'xcodeproj');
+      if (error) {
+        return error;
+      }
+      args.xcodeproj = resolvedPath;
+    }
+    
+    if (args.filePath && typeof args.filePath === 'string') {
+      const path = await import('path');
+      if (!path.default.isAbsolute(args.filePath)) {
+        args.filePath = path.default.resolve(process.cwd(), args.filePath);
+      }
+    }
+    
     try {
       // Handle health check tool first (no environment validation needed)
       if (name === 'xcode_health_check') {

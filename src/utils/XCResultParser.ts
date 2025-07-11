@@ -167,6 +167,18 @@ export class XCResultParser {
       
       if (hasInfoPlist && hasDatabase && hasData) {
         Logger.info('All essential XCResult files are present - ready for stabilization check');
+        
+        // Fast-path for small XCResult files - skip extensive waiting for files < 5MB
+        const xcresultStats = await stat(xcresultPath);
+        const xcresultSizeMB = xcresultStats.size / (1024 * 1024);
+        
+        if (xcresultSizeMB < 5) {
+          Logger.info(`Fast-path: XCResult is small (${xcresultSizeMB.toFixed(1)}MB) - minimal waiting required`);
+          // Quick stability check for small files
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Just 2 seconds
+          return true;
+        }
+        
         break;
       }
       
@@ -186,14 +198,23 @@ export class XCResultParser {
       return false;
     }
     
-    // Phase 3: Critical stabilization check - wait until sizes haven't changed for 10+ seconds
+    // Phase 3: Critical stabilization check - wait until sizes haven't changed for N seconds
     // This implements user insight: "wait until its size hasnt changed for 10 seconds before trying to read it"
-    Logger.info('Phase 3: Waiting for file sizes to stabilize (10+ seconds unchanged)...');
+    // But scale the wait time based on XCResult size for faster completion on small test results
+    
+    // Calculate dynamic stability requirement based on XCResult size
+    const xcresultStats = await stat(xcresultPath);
+    const xcresultSizeMB = xcresultStats.size / (1024 * 1024);
+    
+    // Scale stability time: 2s for small files (<10MB), up to 12s for large files (>100MB)
+    const requiredStabilitySeconds = Math.min(12, Math.max(2, Math.ceil(xcresultSizeMB / 10)));
+    
+    Logger.info(`Phase 3: Waiting for file sizes to stabilize (${requiredStabilitySeconds}+ seconds unchanged)...`);
+    Logger.info(`XCResult size: ${xcresultSizeMB.toFixed(1)}MB - using ${requiredStabilitySeconds}s stability requirement`);
     Logger.info('This is critical - we must not touch xcresulttool until files are completely stable');
     
     let previousSizes: Record<string, number> = {};
     let stableStartTime: number | null = null;
-    const requiredStabilitySeconds = 12; // 12 seconds of stability to be extra safe
     
     while (Date.now() - startTime < timeoutMs) {
       try {
@@ -252,14 +273,16 @@ export class XCResultParser {
       return false;
     }
     
-    // Add extra safety delay as requested
-    Logger.info('Adding extra 5-second safety delay before touching xcresulttool...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Add safety delay scaled to file size
+    const safetyDelayMs = Math.min(5000, Math.max(1000, xcresultSizeMB * 500)); // 1-5s based on size
+    Logger.info(`Adding ${safetyDelayMs/1000}s safety delay before touching xcresulttool...`);
+    await new Promise(resolve => setTimeout(resolve, safetyDelayMs));
     
     // Phase 4: Attempt to read with retries  
     Logger.info('Phase 4: Attempting to read XCResult with retries...');
     const maxRetries = 14; // Up to 14 retries (total 15 attempts)
-    const retryDelay = 15000; // 15 seconds between retries for more patient waiting
+    // Scale retry delay: 3s for small files, up to 15s for large files
+    const retryDelay = Math.min(15000, Math.max(3000, xcresultSizeMB * 1500));
     
     for (let attempt = 0; attempt < maxRetries + 1; attempt++) {
       try {

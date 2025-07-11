@@ -131,7 +131,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
           },
           required: ['xcodeproj'],
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
           },
           required: ['xcodeproj'],
@@ -159,7 +159,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file to build (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
             scheme: {
               type: 'string',
@@ -181,7 +181,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
           },
           required: ['xcodeproj'],
@@ -195,7 +195,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
             schemeName: {
               type: 'string',
@@ -213,7 +213,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
           },
           required: ['xcodeproj'],
@@ -227,7 +227,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
             commandLineArguments: {
               type: 'array',
@@ -246,7 +246,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
             scheme: {
               type: 'string',
@@ -269,7 +269,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
             scheme: {
               type: 'string',
@@ -299,7 +299,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
           },
           required: ['xcodeproj'],
@@ -313,7 +313,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
           },
           required: ['xcodeproj'],
@@ -327,7 +327,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
           },
           required: ['xcodeproj'],
@@ -341,7 +341,7 @@ async function main(): Promise<void> {
           properties: {
             xcodeproj: {
               type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+              description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
           },
           required: ['xcodeproj'],
@@ -355,7 +355,7 @@ async function main(): Promise<void> {
           properties: {
             filePath: {
               type: 'string',
-              description: 'Absolute path to the file to open',
+              description: 'Path to the file to open - supports both absolute (/path/to/file.swift) and relative (src/file.swift) paths',
             },
             lineNumber: {
               type: 'number',
@@ -626,6 +626,29 @@ async function main(): Promise<void> {
             }
           } else {
             toolArgs = parseToolArgs(tool, cliArgs);
+          }
+          
+          // Resolve relative paths for xcodeproj parameter
+          if (toolArgs.xcodeproj && typeof toolArgs.xcodeproj === 'string') {
+            // Import PathValidator here to avoid circular dependencies
+            const { PathValidator } = await import('./utils/PathValidator.js');
+            const { resolvedPath, error } = PathValidator.resolveAndValidateProjectPath(toolArgs.xcodeproj, 'xcodeproj');
+            
+            if (error) {
+              const output = formatResult(error, program.opts().json);
+              console.error(output);
+              process.exit(1);
+            }
+            
+            toolArgs.xcodeproj = resolvedPath;
+          }
+          
+          // Resolve relative paths for filePath parameter (used by xcode_open_file)
+          if (toolArgs.filePath && typeof toolArgs.filePath === 'string') {
+            const path = await import('path');
+            if (!path.default.isAbsolute(toolArgs.filePath)) {
+              toolArgs.filePath = path.default.resolve(process.cwd(), toolArgs.filePath);
+            }
           }
           
           // Validate required parameters

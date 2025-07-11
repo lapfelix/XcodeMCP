@@ -4,6 +4,35 @@ import { ErrorHelper } from './ErrorHelper.js';
 import type { McpResult } from '../types/index.js';
 
 export class PathValidator {
+  /**
+   * Resolve relative paths to absolute paths and validate project path
+   */
+  public static resolveAndValidateProjectPath(projectPath: string, parameterName: string = 'xcodeproj'): { resolvedPath: string; error: McpResult | null } {
+    if (!projectPath) {
+      const guidance = [
+        `• Specify the path to your .xcodeproj or .xcworkspace file using the "${parameterName}" parameter`,
+        "• Example: /Users/username/MyApp/MyApp.xcodeproj (absolute path)",
+        "• Example: MyApp.xcodeproj (relative to current directory)",
+        "• You can drag the project file from Finder to get the path"
+      ].join('\n');
+      return { 
+        resolvedPath: projectPath,
+        error: { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Missing required parameter: ${parameterName}`, guidance) }] }
+      };
+    }
+    
+    // Resolve relative paths to absolute paths
+    const resolvedPath = path.isAbsolute(projectPath) ? projectPath : path.resolve(process.cwd(), projectPath);
+    
+    // Validate the resolved absolute path
+    const validationError = this.validateProjectPath(resolvedPath, parameterName);
+    
+    return {
+      resolvedPath,
+      error: validationError
+    };
+  }
+
   public static validateProjectPath(projectPath: string, parameterName: string = 'xcodeproj'): McpResult | null {
     if (!projectPath) {
       const guidance = [
