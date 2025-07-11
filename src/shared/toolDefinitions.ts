@@ -83,12 +83,12 @@ export function getToolDefinitions(): ToolDefinition[] {
             type: 'string',
             description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
-          schemeName: {
+          scheme_name: {
             type: 'string',
             description: 'Name of the scheme to activate',
           },
         },
-        required: ['xcodeproj', 'schemeName'],
+        required: ['xcodeproj', 'scheme_name'],
       },
     },
     {
@@ -115,7 +115,7 @@ export function getToolDefinitions(): ToolDefinition[] {
             type: 'string',
             description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
-          commandLineArguments: {
+          command_line_arguments: {
             type: 'array',
             items: { type: 'string' },
             description: 'Additional command line arguments',
@@ -138,7 +138,7 @@ export function getToolDefinitions(): ToolDefinition[] {
             type: 'string',
             description: 'Name of the scheme to run',
           },
-          commandLineArguments: {
+          command_line_arguments: {
             type: 'array',
             items: { type: 'string' },
             description: 'Additional command line arguments',
@@ -161,7 +161,7 @@ export function getToolDefinitions(): ToolDefinition[] {
             type: 'string',
             description: 'Scheme name (optional)',
           },
-          skipBuilding: {
+          skip_building: {
             type: 'boolean',
             description: 'Whether to skip building',
           },
@@ -239,16 +239,16 @@ export function getToolDefinitions(): ToolDefinition[] {
       inputSchema: {
         type: 'object',
         properties: {
-          filePath: {
+          file_path: {
             type: 'string',
             description: 'Absolute path to the file to open',
           },
-          lineNumber: {
+          line_number: {
             type: 'number',
             description: 'Optional line number to navigate to',
           },
         },
-        required: ['filePath'],
+        required: ['file_path'],
       },
     },
     {
@@ -374,7 +374,7 @@ export function getToolDefinitions(): ToolDefinition[] {
         properties: {
           hierarchy_json_path: {
             type: 'string',
-            description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult_get_ui_hierarchy)',
+            description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult-get-ui-hierarchy)',
           },
           element_index: {
             type: 'number',
@@ -422,7 +422,7 @@ export function getToolDefinitions(): ToolDefinition[] {
           },
           attachment_index: {
             type: 'number',
-            description: 'Index number of the attachment to export (1-based, from xcresult_list_attachments)',
+            description: 'Index number of the attachment to export (1-based, from xcresult-list-attachments)',
           },
           convert_to_json: {
             type: 'boolean',

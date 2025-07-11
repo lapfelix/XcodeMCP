@@ -202,12 +202,12 @@ async function main(): Promise<void> {
               type: 'string',
               description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
-            schemeName: {
+            scheme_name: {
               type: 'string',
               description: 'Name of the scheme to activate',
             },
           },
-          required: ['xcodeproj', 'schemeName'],
+          required: ['xcodeproj', 'scheme_name'],
         },
       },
       {
@@ -234,7 +234,7 @@ async function main(): Promise<void> {
               type: 'string',
               description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
             },
-            commandLineArguments: {
+            command_line_arguments: {
               type: 'array',
               items: { type: 'string' },
               description: 'Additional command line arguments',
@@ -257,7 +257,7 @@ async function main(): Promise<void> {
               type: 'string',
               description: 'Name of the scheme to run',
             },
-            commandLineArguments: {
+            command_line_arguments: {
               type: 'array',
               items: { type: 'string' },
               description: 'Additional command line arguments',
@@ -280,7 +280,7 @@ async function main(): Promise<void> {
               type: 'string',
               description: 'Scheme name (optional)',
             },
-            skipBuilding: {
+            skip_building: {
               type: 'boolean',
               description: 'Whether to skip building',
             },
@@ -358,16 +358,16 @@ async function main(): Promise<void> {
         inputSchema: {
           type: 'object',
           properties: {
-            filePath: {
+            file_path: {
               type: 'string',
               description: 'Path to the file to open - supports both absolute (/path/to/file.swift) and relative (src/file.swift) paths',
             },
-            lineNumber: {
+            line_number: {
               type: 'number',
               description: 'Optional line number to navigate to',
             },
           },
-          required: ['filePath'],
+          required: ['file_path'],
         },
       },
       {
@@ -493,7 +493,7 @@ async function main(): Promise<void> {
           properties: {
             hierarchy_json_path: {
               type: 'string',
-              description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult_get_ui_hierarchy)',
+              description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult-get-ui-hierarchy)',
             },
             element_index: {
               type: 'number',
@@ -541,7 +541,7 @@ async function main(): Promise<void> {
             },
             attachment_index: {
               type: 'number',
-              description: 'Index number of the attachment to export (1-based, from xcresult_list_attachments)',
+              description: 'Index number of the attachment to export (1-based, from xcresult-list-attachments)',
             },
             convert_to_json: {
               type: 'boolean',
@@ -649,11 +649,11 @@ async function main(): Promise<void> {
             toolArgs.xcodeproj = resolvedPath;
           }
           
-          // Resolve relative paths for filePath parameter (used by xcode_open_file)
-          if (toolArgs.filePath && typeof toolArgs.filePath === 'string') {
+          // Resolve relative paths for file_path parameter (used by xcode_open_file)
+          if (toolArgs.file_path && typeof toolArgs.file_path === 'string') {
             const path = await import('path');
-            if (!path.default.isAbsolute(toolArgs.filePath)) {
-              toolArgs.filePath = path.default.resolve(process.cwd(), toolArgs.filePath);
+            if (!path.default.isAbsolute(toolArgs.file_path)) {
+              toolArgs.file_path = path.default.resolve(process.cwd(), toolArgs.file_path);
             }
           }
           

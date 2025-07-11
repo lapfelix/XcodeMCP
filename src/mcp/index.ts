@@ -448,7 +448,7 @@ export class McpLibrary extends EventEmitter {
           properties: {
             hierarchy_json_path: {
               type: 'string',
-              description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult_get_ui_hierarchy)',
+              description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult-get-ui-hierarchy)',
             },
             element_index: {
               type: 'number',
@@ -496,7 +496,7 @@ export class McpLibrary extends EventEmitter {
             },
             attachment_index: {
               type: 'number',
-              description: 'Index number of the attachment to export (1-based, from xcresult_list_attachments)',
+              description: 'Index number of the attachment to export (1-based, from xcresult-list-attachments)',
             },
             convert_to_json: {
               type: 'boolean',

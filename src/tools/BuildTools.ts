@@ -1192,8 +1192,8 @@ export class BuildTools {
       });
 
       message += `💡 Usage:\n`;
-      message += `  • View results: xcresult_browse "<path>"\n`;
-      message += `  • Get console: xcresult_browser_get_console "<path>" <test-id>\n`;
+      message += `  • View results: xcresult-browse --xcresult-path "<path>"\n`;
+      message += `  • Get console: xcresult-browser-get-console --xcresult-path "<path>" --test-id <test-id>\n`;
       
       return { content: [{ type: 'text', text: message }] };
     } catch (error) {

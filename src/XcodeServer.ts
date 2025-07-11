@@ -355,12 +355,12 @@ export class XcodeServer {
                   type: 'string',
                   description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
-                schemeName: {
+                scheme_name: {
                   type: 'string',
                   description: 'Name of the scheme to activate',
                 },
               },
-              required: ['xcodeproj', 'schemeName'],
+              required: ['xcodeproj', 'scheme_name'],
             },
           },
           {
@@ -387,7 +387,7 @@ export class XcodeServer {
                   type: 'string',
                   description: 'Path to the .xcodeproj file (or .xcworkspace if available) - supports both absolute (/path/to/project.xcodeproj) and relative (MyApp.xcodeproj) paths',
                 },
-                commandLineArguments: {
+                command_line_arguments: {
                   type: 'array',
                   items: { type: 'string' },
                   description: 'Additional command line arguments',
@@ -410,7 +410,7 @@ export class XcodeServer {
                   type: 'string',
                   description: 'Name of the scheme to run',
                 },
-                commandLineArguments: {
+                command_line_arguments: {
                   type: 'array',
                   items: { type: 'string' },
                   description: 'Additional command line arguments',
@@ -433,7 +433,7 @@ export class XcodeServer {
                   type: 'string',
                   description: 'Scheme name (optional)',
                 },
-                skipBuilding: {
+                skip_building: {
                   type: 'boolean',
                   description: 'Whether to skip building',
                 },
@@ -511,16 +511,16 @@ export class XcodeServer {
             inputSchema: {
               type: 'object',
               properties: {
-                filePath: {
+                file_path: {
                   type: 'string',
                   description: 'Path to the file to open - supports both absolute (/path/to/file.swift) and relative (src/file.swift) paths',
                 },
-                lineNumber: {
+                line_number: {
                   type: 'number',
                   description: 'Optional line number to navigate to',
                 },
               },
-              required: ['filePath'],
+              required: ['file_path'],
             },
           },
           {
@@ -646,7 +646,7 @@ export class XcodeServer {
               properties: {
                 hierarchy_json_path: {
                   type: 'string',
-                  description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult_get_ui_hierarchy)',
+                  description: 'Absolute path to the UI hierarchy JSON file (the full version saved by xcresult-get-ui-hierarchy)',
                 },
                 element_index: {
                   type: 'number',
@@ -694,7 +694,7 @@ export class XcodeServer {
                 },
                 attachment_index: {
                   type: 'number',
-                  description: 'Index number of the attachment to export (1-based, from xcresult_list_attachments)',
+                  description: 'Index number of the attachment to export (1-based, from xcresult-list-attachments)',
                 },
                 convert_to_json: {
                   type: 'boolean',
@@ -802,7 +802,7 @@ export class XcodeServer {
             }
             return await BuildTools.test(
               args.xcodeproj as string, 
-              (args.commandLineArguments as string[]) || [], 
+              (args.command_line_arguments as string[]) || [], 
               this.openProject.bind(this)
             );
           case 'xcode_run':
@@ -815,7 +815,7 @@ export class XcodeServer {
             return await BuildTools.run(
               args.xcodeproj as string, 
               args.scheme as string,
-              (args.commandLineArguments as string[]) || [], 
+              (args.command_line_arguments as string[]) || [], 
               this.openProject.bind(this)
             );
           case 'xcode_debug':
@@ -828,7 +828,7 @@ export class XcodeServer {
             return await BuildTools.debug(
               args.xcodeproj as string, 
               args.scheme as string, 
-              args.skipBuilding as boolean, 
+              args.skip_building as boolean, 
               this.openProject.bind(this)
             );
           case 'xcode_stop':
@@ -852,12 +852,12 @@ export class XcodeServer {
             if (!args.xcodeproj) {
               throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
             }
-            if (!args.schemeName) {
-              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: schemeName`);
+            if (!args.scheme_name) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: scheme_name`);
             }
             return await ProjectTools.setActiveScheme(
               args.xcodeproj as string, 
-              args.schemeName as string, 
+              args.scheme_name as string, 
               this.openProject.bind(this)
             );
           case 'xcode_get_workspace_info':
@@ -871,10 +871,10 @@ export class XcodeServer {
             }
             return await InfoTools.getProjects(args.xcodeproj as string, this.openProject.bind(this));
           case 'xcode_open_file':
-            if (!args.filePath) {
-              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: filePath`);
+            if (!args.file_path) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: file_path`);
             }
-            return await InfoTools.openFile(args.filePath as string, args.lineNumber as number);
+            return await InfoTools.openFile(args.file_path as string, args.line_number as number);
           case 'xcresult_browse':
             if (!args.xcresult_path) {
               throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
@@ -1205,7 +1205,7 @@ export class XcodeServer {
           }
           return await BuildTools.test(
             args.xcodeproj as string, 
-            (args.commandLineArguments as string[]) || [], 
+            (args.command_line_arguments as string[]) || [], 
             this.openProject.bind(this)
           );
         case 'xcode_run':
@@ -1218,7 +1218,7 @@ export class XcodeServer {
           return await BuildTools.run(
             args.xcodeproj as string, 
             args.scheme as string,
-            (args.commandLineArguments as string[]) || [], 
+            (args.command_line_arguments as string[]) || [], 
             this.openProject.bind(this)
           );
         case 'xcode_debug':
@@ -1231,7 +1231,7 @@ export class XcodeServer {
           return await BuildTools.debug(
             args.xcodeproj as string, 
             args.scheme as string, 
-            args.skipBuilding as boolean, 
+            args.skip_building as boolean, 
             this.openProject.bind(this)
           );
         case 'xcode_stop':
@@ -1255,12 +1255,12 @@ export class XcodeServer {
           if (!args.xcodeproj) {
             throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
           }
-          if (!args.schemeName) {
-            throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: schemeName`);
+          if (!args.scheme_name) {
+            throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: scheme_name`);
           }
           return await ProjectTools.setActiveScheme(
             args.xcodeproj as string, 
-            args.schemeName as string, 
+            args.scheme_name as string, 
             this.openProject.bind(this)
           );
         case 'xcode_get_workspace_info':
@@ -1274,10 +1274,10 @@ export class XcodeServer {
           }
           return await InfoTools.getProjects(args.xcodeproj as string, this.openProject.bind(this));
         case 'xcode_open_file':
-          if (!args.filePath) {
-            throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: filePath`);
+          if (!args.file_path) {
+            throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: file_path`);
           }
-          return await InfoTools.openFile(args.filePath as string, args.lineNumber as number);
+          return await InfoTools.openFile(args.file_path as string, args.line_number as number);
         case 'xcresult_browse':
           if (!args.xcresult_path) {
             throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcresult_path`);
