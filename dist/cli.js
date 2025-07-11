@@ -654,6 +654,19 @@ async function main() {
                                         text.includes('❌ OS:') ||
                                         text.includes('❌ OSASCRIPT:');
                                 }
+                                else if (tool.name === 'xcode_test') {
+                                    // Special case for test results: check if tests actually failed
+                                    if (text.includes('✅ All tests passed!')) {
+                                        hasError = false;
+                                    }
+                                    else {
+                                        // Look for actual test failures or build errors
+                                        hasError = text.includes('❌ TEST BUILD FAILED') ||
+                                            text.includes('❌ TESTS FAILED') ||
+                                            text.includes('⏹️ TEST BUILD INTERRUPTED') ||
+                                            (text.includes('Failed:') && !text.includes('Failed: 0'));
+                                    }
+                                }
                                 else {
                                     // Check for common error patterns
                                     if (text.includes('❌') ||
