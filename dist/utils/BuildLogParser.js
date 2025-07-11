@@ -143,13 +143,23 @@ export class BuildLogParser {
             for (const logFile of logFiles) {
                 const fullPath = path.join(logsDir, logFile);
                 const stats = await stat(fullPath);
-                // Include logs modified since the test started (with 30 second buffer for clock differences)
-                if (stats.mtime.getTime() >= sinceTime - 30000) {
+                // Include logs modified AFTER the test started (strict comparison, no buffer)
+                // This ensures we only get logs created by the current operation
+                if (stats.mtime.getTime() > sinceTime) {
                     recentLogs.push({ path: fullPath, mtime: stats.mtime });
                 }
             }
             // Sort by modification time (newest first)
             recentLogs.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+            // If no recent logs found, fallback to the single most recent log
+            // This handles cases where clock differences might cause issues
+            if (recentLogs.length === 0) {
+                Logger.warn('No recent build logs found, falling back to latest log');
+                const latestLog = await this.getLatestBuildLog(projectPath);
+                if (latestLog) {
+                    return [latestLog];
+                }
+            }
             return recentLogs;
         }
         catch (error) {
