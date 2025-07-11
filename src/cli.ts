@@ -58,9 +58,10 @@ function parseToolArgs(tool: ToolDefinition, cliArgs: Record<string, any>): Reco
   
   for (const [propName, propSchema] of Object.entries(tool.inputSchema.properties)) {
     const propDef = propSchema as any;
-    // Convert underscores to dashes to match CLI argument names
+    // Convert underscores to dashes, then to camelCase to match commander.js behavior
     const dashPropName = propName.replace(/_/g, '-');
-    const cliValue = cliArgs[dashPropName];
+    const camelPropName = dashPropName.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+    const cliValue = cliArgs[camelPropName];
     
     if (cliValue !== undefined) {
       // Handle array types
@@ -631,6 +632,7 @@ async function main(): Promise<void> {
           } else {
             toolArgs = parseToolArgs(tool, cliArgs);
           }
+          
           
           // Resolve relative paths for xcodeproj parameter
           if (toolArgs.xcodeproj && typeof toolArgs.xcodeproj === 'string') {
