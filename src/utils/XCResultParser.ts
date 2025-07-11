@@ -489,7 +489,8 @@ export class XCResultParser {
       
       // Only show passed tests if there are failures (to keep output manageable)
       if (testDetails.failed.length > 0 && testDetails.passed.length > 0) {
-        message += `\n✅ Passed Tests (${testDetails.passed.length}) - showing first ${maxPassedTests}:\n`;
+        const showingText = testDetails.passed.length > maxPassedTests ? ` - showing first ${maxPassedTests}` : '';
+        message += `\n✅ Passed Tests (${testDetails.passed.length})${showingText}:\n`;
         testDetails.passed.slice(0, maxPassedTests).forEach((test, index) => {
           message += `  ${index + 1}. ${test.name} (ID: ${test.id})\n`;
         });
