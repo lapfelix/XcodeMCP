@@ -157,12 +157,12 @@ export class McpLibrary extends EventEmitter {
               type: 'string',
               description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
             },
-            schemeName: {
+            scheme_name: {
               type: 'string',
               description: 'Name of the scheme to activate',
             },
           },
-          required: ['xcodeproj', 'schemeName'],
+          required: ['xcodeproj', 'scheme_name'],
         },
       },
       {
@@ -189,7 +189,7 @@ export class McpLibrary extends EventEmitter {
               type: 'string',
               description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
             },
-            commandLineArguments: {
+            command_line_arguments: {
               type: 'array',
               items: { type: 'string' },
               description: 'Additional command line arguments',
@@ -212,7 +212,7 @@ export class McpLibrary extends EventEmitter {
               type: 'string',
               description: 'Name of the scheme to run',
             },
-            commandLineArguments: {
+            command_line_arguments: {
               type: 'array',
               items: { type: 'string' },
               description: 'Additional command line arguments',
@@ -235,7 +235,7 @@ export class McpLibrary extends EventEmitter {
               type: 'string',
               description: 'Scheme name (optional)',
             },
-            skipBuilding: {
+            skip_building: {
               type: 'boolean',
               description: 'Whether to skip building',
             },
@@ -313,16 +313,16 @@ export class McpLibrary extends EventEmitter {
         inputSchema: {
           type: 'object',
           properties: {
-            filePath: {
+            file_path: {
               type: 'string',
               description: 'Absolute path to the file to open',
             },
-            lineNumber: {
+            line_number: {
               type: 'number',
               description: 'Optional line number to navigate to',
             },
           },
-          required: ['filePath'],
+          required: ['file_path'],
         },
       },
       {
