@@ -39,7 +39,7 @@ export function getToolDefinitions(): ToolDefinition[] {
     },
     {
       name: 'xcode_build',
-      description: 'Build a specific Xcode project or workspace with the specified scheme. If destination is not provided, uses the currently active destination.',
+      description: 'Build a specific Xcode project or workspace with the specified scheme. If destination is not provided, uses the currently active destination. ⏱️ Can take minutes to hours - do not timeout.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -107,7 +107,7 @@ export function getToolDefinitions(): ToolDefinition[] {
     },
     {
       name: 'xcode_test',
-      description: 'Run tests for a specific project. Optionally run only specific tests or test classes by temporarily modifying the test plan (automatically restored after completion).',
+      description: 'Run tests for a specific project. Optionally run only specific tests or test classes by temporarily modifying the test plan (automatically restored after completion). ⏱️ Can take minutes to hours - do not timeout.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -148,7 +148,7 @@ export function getToolDefinitions(): ToolDefinition[] {
     },
     {
       name: 'xcode_run',
-      description: 'Run a specific project with the specified scheme',
+      description: 'Run a specific project with the specified scheme. ⏱️ Can run indefinitely - do not timeout.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -171,7 +171,7 @@ export function getToolDefinitions(): ToolDefinition[] {
     },
     {
       name: 'xcode_debug',
-      description: 'Start debugging session for a specific project',
+      description: 'Start debugging session for a specific project. ⏱️ Can run indefinitely - do not timeout.',
       inputSchema: {
         type: 'object',
         properties: {

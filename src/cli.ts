@@ -140,6 +140,11 @@ async function main(): Promise<void> {
   • Test Results       - Analyze XCResult files and test artifacts
   • System             - Health checks and diagnostics
 
+⏱️  Command Execution:
+  • Commands have built-in timeouts and handle long-running operations
+  • Build, test, and run operations can take minutes to hours depending on project size
+  • The CLI will wait for completion - do not manually timeout or interrupt
+
 💡 Use 'xcodecontrol list-tools' to see all commands organized by category
 💡 Use 'xcodecontrol <command> --help' for detailed help on any command`)
       .option('--json', 'Output results in JSON format', false)
@@ -213,6 +218,9 @@ async function main(): Promise<void> {
         console.log('💡 Usage:');
         console.log('  xcodecontrol <command> --help    Show help for specific command');
         console.log('  xcodecontrol --help              Show general help');
+        console.log('');
+        console.log('⏱️  Note: Build, test, and run commands can take minutes to hours.');
+        console.log('   The CLI handles long operations automatically - do not timeout.');
       });
     
     // Dynamically create subcommands for each tool
@@ -293,11 +301,11 @@ async function main(): Promise<void> {
           
           // Validate required parameters
           if (tool.inputSchema?.required) {
-            for (const required of tool.inputSchema.required) {
-              if (toolArgs[required] === undefined) {
-                console.error(`❌ Missing required parameter: ${required}`);
-                process.exit(1);
-              }
+            const missingParams = tool.inputSchema.required.filter((param: string) => toolArgs[param] === undefined);
+            if (missingParams.length > 0) {
+              console.error(`❌ Missing required parameter${missingParams.length > 1 ? 's' : ''}: ${missingParams.join(', ')}\n`);
+              cmd.help();
+              return; // cmd.help() calls process.exit(), but adding return for clarity
             }
           }
           
