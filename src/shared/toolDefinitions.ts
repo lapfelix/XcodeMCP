@@ -115,6 +115,10 @@ export function getToolDefinitions(): ToolDefinition[] {
             type: 'string',
             description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
+          destination: {
+            type: 'string',
+            description: 'Test destination (required for predictable test environments) - e.g., "iPhone 15 Pro Simulator", "iPad Air Simulator"',
+          },
           command_line_arguments: {
             type: 'array',
             items: { type: 'string' },
@@ -143,7 +147,7 @@ export function getToolDefinitions(): ToolDefinition[] {
             description: 'Optional: Target name for the test target (alternative to test_target_identifier). Example: "TestAppTests".',
           },
         },
-        required: ['xcodeproj'],
+        required: ['xcodeproj', 'destination'],
       },
     },
     {

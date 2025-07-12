@@ -800,6 +800,12 @@ export class XcodeServer {
                 `Missing required parameter: xcodeproj\n\n💡 To fix this:\n• Specify the absolute path to your .xcodeproj or .xcworkspace file using the "xcodeproj" parameter\n• Example: /Users/username/MyApp/MyApp.xcodeproj\n• You can drag the project file from Finder to get the path`
               );
             }
+            if (!args.destination) {
+              throw new McpError(
+                ErrorCode.InvalidParams,
+                `Missing required parameter: destination\n\n💡 To fix this:\n• Specify the test destination (e.g., "iPhone 15 Pro Simulator")\n• Use 'get-run-destinations' to see available destinations\n• Example: "iPad Air Simulator" or "iPhone 16 Pro"`
+              );
+            }
             const testOptions: {
               testPlanPath?: string;
               selectedTests?: string[];
@@ -816,6 +822,7 @@ export class XcodeServer {
             
             return await BuildTools.test(
               args.xcodeproj as string, 
+              args.destination as string,
               (args.command_line_arguments as string[]) || [], 
               this.openProject.bind(this),
               Object.keys(testOptions).length > 0 ? testOptions : undefined
@@ -1075,9 +1082,9 @@ export class XcodeServer {
     return BuildTools.clean(projectPath, this.openProject.bind(this));
   }
 
-  public async test(projectPath: string, commandLineArguments: string[] = []): Promise<import('./types/index.js').McpResult> {
+  public async test(projectPath: string, destination: string, commandLineArguments: string[] = []): Promise<import('./types/index.js').McpResult> {
     const { BuildTools } = await import('./tools/BuildTools.js');
-    return BuildTools.test(projectPath, commandLineArguments, this.openProject.bind(this));
+    return BuildTools.test(projectPath, destination, commandLineArguments, this.openProject.bind(this));
   }
 
   public async run(projectPath: string, commandLineArguments: string[] = []): Promise<import('./types/index.js').McpResult> {
@@ -1236,8 +1243,15 @@ export class XcodeServer {
               `Missing required parameter: xcodeproj\n\n💡 To fix this:\n• Specify the absolute path to your .xcodeproj or .xcworkspace file using the "xcodeproj" parameter\n• Example: /Users/username/MyApp/MyApp.xcodeproj\n• You can drag the project file from Finder to get the path`
             );
           }
+          if (!args.destination) {
+            throw new McpError(
+              ErrorCode.InvalidParams,
+              `Missing required parameter: destination\n\n💡 To fix this:\n• Specify the test destination (e.g., "iPhone 15 Pro Simulator")\n• Use 'get-run-destinations' to see available destinations\n• Example: "iPad Air Simulator" or "iPhone 16 Pro"`
+            );
+          }
           return await BuildTools.test(
             args.xcodeproj as string, 
+            args.destination as string,
             (args.command_line_arguments as string[]) || [], 
             this.openProject.bind(this)
           );

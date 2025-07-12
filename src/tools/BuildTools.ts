@@ -338,6 +338,7 @@ export class BuildTools {
 
   public static async test(
     projectPath: string, 
+    destination: string,
     commandLineArguments: string[] = [], 
     openProject: OpenProjectCallback,
     options?: {
@@ -352,6 +353,69 @@ export class BuildTools {
     if (validationError) return validationError;
 
     await openProject(projectPath);
+
+    // Set the destination for testing
+    {
+      // Normalize the destination name for better matching
+      const normalizedDestination = ParameterNormalizer.normalizeDestinationName(destination);
+      
+      const setDestinationScript = `
+        (function() {
+          const app = Application('Xcode');
+          const workspace = app.activeWorkspaceDocument();
+          if (!workspace) throw new Error('No active workspace');
+          
+          const destinations = workspace.runDestinations();
+          const destinationNames = destinations.map(dest => dest.name());
+          
+          // Try exact match first
+          let targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(normalizedDestination)});
+          
+          // If not found, try original name
+          if (!targetDestination) {
+            targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(destination)});
+          }
+          
+          if (!targetDestination) {
+            throw new Error('Destination not found. Available: ' + JSON.stringify(destinationNames));
+          }
+          
+          workspace.activeRunDestination = targetDestination;
+          return 'Destination set to ' + targetDestination.name();
+        })()
+      `;
+      
+      try {
+        await JXAExecutor.execute(setDestinationScript);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('Destination not found')) {
+          // Extract available destinations from error message
+          try {
+            const availableMatch = errorMessage.match(/Available: (\[.*\])/);
+            if (availableMatch) {
+              const availableDestinations = JSON.parse(availableMatch[1]!);
+              const bestMatch = ParameterNormalizer.findBestMatch(destination, availableDestinations);
+              
+              let message = `❌ Destination '${destination}' not found\n\nAvailable destinations:\n`;
+              availableDestinations.forEach((dest: string) => {
+                if (dest === bestMatch) {
+                  message += `  • ${dest} ← Did you mean this?\n`;
+                } else {
+                  message += `  • ${dest}\n`;
+                }
+              });
+              
+              return { content: [{ type: 'text', text: message }] };
+            }
+          } catch {
+            // Fall through to generic error
+          }
+        }
+        
+        return { content: [{ type: 'text', text: `Failed to set destination '${destination}': ${errorMessage}` }] };
+      }
+    }
 
     // Handle test plan modification if selective tests are requested
     let originalTestPlan: string | null = null;
