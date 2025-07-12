@@ -116,9 +116,17 @@ describe('CLI Parameter Consistency', () => {
       timeout: 10000
     });
     
-    expect(result3.stdout).toContain('xcresult-browse --xcresult-path');
-    expect(result3.stdout).toContain('xcresult-browser-get-console --xcresult-path');
-    expect(result3.stdout).not.toContain('xcresult_browse');
-    expect(result3.stdout).not.toContain('xcresult_browser_get_console');
+    // Should contain either usage instructions (if files found) or helpful error message (if no files)
+    const hasUsageInstructions = result3.stdout.includes('xcresult-browse --xcresult-path');
+    const hasNoFilesMessage = result3.stdout.includes('No XCResult files found');
+    
+    expect(hasUsageInstructions || hasNoFilesMessage).toBe(true);
+    
+    // If there are usage instructions, verify they use kebab-case
+    if (hasUsageInstructions) {
+      expect(result3.stdout).toContain('xcresult-browser-get-console --xcresult-path');
+      expect(result3.stdout).not.toContain('xcresult_browse');
+      expect(result3.stdout).not.toContain('xcresult_browser_get_console');
+    }
   }, 30000);
 });

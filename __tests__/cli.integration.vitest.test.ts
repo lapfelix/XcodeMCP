@@ -29,7 +29,8 @@ describe('CLI Integration Tests', () => {
   it('should list all available tools', async () => {
     const { stdout } = await execa('node', [CLI_PATH, 'list-tools']);
     
-    expect(stdout).toContain('Available tools:');
+    expect(stdout).toContain('Available tools organized by category:');
+    expect(stdout).toContain('📁 Project Management:');
     expect(stdout).toContain('open-project');
     expect(stdout).toContain('build');
     expect(stdout).toContain('health-check');
