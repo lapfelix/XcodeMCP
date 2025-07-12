@@ -107,7 +107,7 @@ export function getToolDefinitions(): ToolDefinition[] {
     },
     {
       name: 'xcode_test',
-      description: 'Run tests for a specific project',
+      description: 'Run tests for a specific project. Optionally run only specific tests or test classes by temporarily modifying the test plan (automatically restored after completion).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -119,6 +119,28 @@ export function getToolDefinitions(): ToolDefinition[] {
             type: 'array',
             items: { type: 'string' },
             description: 'Additional command line arguments',
+          },
+          test_plan_path: {
+            type: 'string',
+            description: 'Optional: Absolute path to .xctestplan file to temporarily modify for selective test execution',
+          },
+          selected_tests: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional: Array of specific test identifiers to run. Format depends on test framework: XCTest: "TestAppUITests/testExample" (no parentheses), Swift Testing: "TestAppTests/example". Requires test_plan_path.',
+          },
+          selected_test_classes: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional: Array of test class names to run (e.g., ["TestAppTests", "TestAppUITests"]). This runs ALL tests in the specified classes. Requires test_plan_path.',
+          },
+          test_target_identifier: {
+            type: 'string',
+            description: 'Optional: Target identifier for the test target (required when using test filtering). Can be found in project.pbxproj.',
+          },
+          test_target_name: {
+            type: 'string',
+            description: 'Optional: Target name for the test target (alternative to test_target_identifier). Example: "TestAppTests".',
           },
         },
         required: ['xcodeproj'],
@@ -430,6 +452,34 @@ export function getToolDefinitions(): ToolDefinition[] {
           },
         },
         required: ['xcresult_path', 'test_id', 'attachment_index'],
+      },
+    },
+    {
+      name: 'xcode_refresh_project',
+      description: 'Refresh/reload an Xcode project by closing and reopening it to pick up external changes like modified .xctestplan files',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          xcodeproj: {
+            type: 'string',
+            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) to refresh',
+          },
+        },
+        required: ['xcodeproj'],
+      },
+    },
+    {
+      name: 'xcode_get_test_targets',
+      description: 'Get information about test targets in a project, including names and identifiers',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          xcodeproj: {
+            type: 'string',
+            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available)',
+          },
+        },
+        required: ['xcodeproj'],
       },
     },
   ];

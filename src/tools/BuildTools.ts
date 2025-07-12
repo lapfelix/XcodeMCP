@@ -339,12 +339,125 @@ export class BuildTools {
   public static async test(
     projectPath: string, 
     commandLineArguments: string[] = [], 
-    openProject: OpenProjectCallback
+    openProject: OpenProjectCallback,
+    options?: {
+      testPlanPath?: string;
+      selectedTests?: string[];
+      selectedTestClasses?: string[];
+      testTargetIdentifier?: string;
+      testTargetName?: string;
+    }
   ): Promise<McpResult> {
     const validationError = PathValidator.validateProjectPath(projectPath);
     if (validationError) return validationError;
 
     await openProject(projectPath);
+
+    // Handle test plan modification if selective tests are requested
+    let originalTestPlan: string | null = null;
+    let shouldRestoreTestPlan = false;
+    
+    if (options?.testPlanPath && (options?.selectedTests?.length || options?.selectedTestClasses?.length)) {
+      if (!options.testTargetIdentifier && !options.testTargetName) {
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: 'Error: either test_target_identifier or test_target_name is required when using test filtering' 
+          }] 
+        };
+      }
+
+      // If target name is provided but no identifier, look up the identifier
+      let targetIdentifier = options.testTargetIdentifier;
+      let targetName = options.testTargetName;
+      
+      if (options.testTargetName && !options.testTargetIdentifier) {
+        try {
+          const { ProjectTools } = await import('./ProjectTools.js');
+          const targetInfo = await ProjectTools.getTestTargets(projectPath);
+          
+          // Parse the target info to find the identifier
+          const targetText = targetInfo.content?.[0]?.type === 'text' ? targetInfo.content[0].text : '';
+          const namePattern = new RegExp(`\\*\\*${options.testTargetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*\\s*\\n\\s*•\\s*Identifier:\\s*([A-F0-9]{24})`, 'i');
+          const match = targetText.match(namePattern);
+          
+          if (match && match[1]) {
+            targetIdentifier = match[1];
+            targetName = options.testTargetName;
+          } else {
+            return { 
+              content: [{ 
+                type: 'text', 
+                text: `Error: Test target '${options.testTargetName}' not found. Use 'xcode_get_test_targets' to see available targets.` 
+              }] 
+            };
+          }
+        } catch (lookupError) {
+          return { 
+            content: [{ 
+              type: 'text', 
+              text: `Error: Failed to lookup test target '${options.testTargetName}': ${lookupError instanceof Error ? lookupError.message : String(lookupError)}` 
+            }] 
+          };
+        }
+      }
+
+      try {
+        // Import filesystem operations
+        const { promises: fs } = await import('fs');
+        
+        // Backup original test plan
+        originalTestPlan = await fs.readFile(options.testPlanPath, 'utf8');
+        shouldRestoreTestPlan = true;
+        
+        // Build selected tests array
+        let selectedTests: string[] = [];
+        
+        // Add individual tests
+        if (options.selectedTests?.length) {
+          selectedTests.push(...options.selectedTests);
+        }
+        
+        // Add all tests from selected test classes
+        if (options.selectedTestClasses?.length) {
+          // For now, add the class names - we'd need to scan for specific test methods later
+          selectedTests.push(...options.selectedTestClasses);
+        }
+        
+        // Get project name from path for container reference
+        const { basename } = await import('path');
+        const projectName = basename(projectPath, '.xcodeproj');
+        
+        // Create test target configuration
+        const testTargets = [{
+          target: {
+            containerPath: `container:${projectName}.xcodeproj`,
+            identifier: targetIdentifier!,
+            name: targetName || targetIdentifier!
+          },
+          selectedTests: selectedTests
+        }];
+        
+        // Update test plan temporarily
+        const { TestPlanTools } = await import('./TestPlanTools.js');
+        await TestPlanTools.updateTestPlanAndReload(
+          options.testPlanPath,
+          projectPath,
+          testTargets
+        );
+        
+        Logger.info(`Temporarily modified test plan to run ${selectedTests.length} selected tests`);
+        
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: `Failed to modify test plan: ${errorMsg}` 
+          }] 
+        };
+      }
+    }
 
     // Get initial xcresult files to detect new ones
     const initialXCResults = await this._findXCResultFiles(projectPath);
@@ -693,7 +806,7 @@ export class BuildTools {
               message += `  • Quick summary: xcresult-summary --xcresult-path <path>`;
             }
             
-            return { content: [{ type: 'text', text: message }] };
+            return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: message }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
           } catch (parseError) {
             Logger.warn(`Failed to parse xcresult: ${parseError}`);
             // Fall back to basic result
@@ -711,7 +824,7 @@ export class BuildTools {
             message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
             message += `  • Quick summary: xcresult_summary <path>`;
             
-            return { content: [{ type: 'text', text: message }] };
+            return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: message }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
           }
         } else {
           // Test completion detection timed out
@@ -729,18 +842,29 @@ export class BuildTools {
           message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
           message += `  • Quick summary: xcresult_summary <path>`;
           
-          return { content: [{ type: 'text', text: message }] };
+          return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: message }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
         }
       } else {
         // No xcresult found - fall back to basic result
         if (testResult.status === 'failed') {
-          return { content: [{ type: 'text', text: `❌ TEST FAILED\n\n${testResult.error || 'Test execution failed'}\n\nNote: No XCResult file found for detailed analysis.` }] };
+          return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: `❌ TEST FAILED\n\n${testResult.error || 'Test execution failed'}\n\nNote: No XCResult file found for detailed analysis.` }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
         }
         
         const message = `🧪 TESTS COMPLETED${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\nStatus: ${testResult.status}\n\nNote: No XCResult file found for detailed analysis.`;
-        return { content: [{ type: 'text', text: message }] };
+        return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: message }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
       }
     } catch (error) {
+      // Restore test plan even on error
+      if (shouldRestoreTestPlan && originalTestPlan && options?.testPlanPath) {
+        try {
+          const { promises: fs } = await import('fs');
+          await fs.writeFile(options.testPlanPath, originalTestPlan, 'utf8');
+          Logger.info('Restored original test plan after error');
+        } catch (restoreError) {
+          Logger.error(`Failed to restore test plan: ${restoreError}`);
+        }
+      }
+      
       // Re-throw McpErrors to properly signal build failures
       if (error instanceof McpError) {
         throw error;
@@ -753,6 +877,35 @@ export class BuildTools {
       const errorMessage = error instanceof Error ? error.message : String(error);
       return { content: [{ type: 'text', text: `Failed to run tests: ${errorMessage}` }] };
     }
+  }
+
+  /**
+   * Helper method to restore test plan and return result
+   */
+  private static async _restoreTestPlanAndReturn(
+    result: McpResult,
+    shouldRestoreTestPlan: boolean,
+    originalTestPlan: string | null,
+    testPlanPath?: string
+  ): Promise<McpResult> {
+    if (shouldRestoreTestPlan && originalTestPlan && testPlanPath) {
+      try {
+        const { promises: fs } = await import('fs');
+        await fs.writeFile(testPlanPath, originalTestPlan, 'utf8');
+        Logger.info('Restored original test plan');
+        
+        // Trigger reload after restoration
+        const { TestPlanTools } = await import('./TestPlanTools.js');
+        await TestPlanTools.triggerTestPlanReload(testPlanPath, testPlanPath);
+      } catch (restoreError) {
+        Logger.error(`Failed to restore test plan: ${restoreError}`);
+        // Append restoration error to result
+        if (result.content?.[0]?.type === 'text') {
+          result.content[0].text += `\n\n⚠️ Warning: Failed to restore original test plan: ${restoreError}`;
+        }
+      }
+    }
+    return result;
   }
 
   public static async run(

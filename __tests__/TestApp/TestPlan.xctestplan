@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "id": "A10971CB-F0CB-4AC0-B7E6-968EC2B60402",
+      "name": "Configuration 1",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "testTimeoutsEnabled": true
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:TestApp.xcodeproj",
+        "identifier": "DC9AB4392E21B7C0002FC871",
+        "name": "TestAppTests"
+      },
+      "selectedTests": [
+        "TestAppTests"
+      ]
+    }
+  ],
+  "version": 1
+}

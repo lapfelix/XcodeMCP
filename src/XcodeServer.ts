@@ -800,10 +800,25 @@ export class XcodeServer {
                 `Missing required parameter: xcodeproj\n\n💡 To fix this:\n• Specify the absolute path to your .xcodeproj or .xcworkspace file using the "xcodeproj" parameter\n• Example: /Users/username/MyApp/MyApp.xcodeproj\n• You can drag the project file from Finder to get the path`
               );
             }
+            const testOptions: {
+              testPlanPath?: string;
+              selectedTests?: string[];
+              selectedTestClasses?: string[];
+              testTargetIdentifier?: string;
+              testTargetName?: string;
+            } = {};
+            
+            if (args.test_plan_path) testOptions.testPlanPath = args.test_plan_path as string;
+            if (args.selected_tests) testOptions.selectedTests = args.selected_tests as string[];
+            if (args.selected_test_classes) testOptions.selectedTestClasses = args.selected_test_classes as string[];
+            if (args.test_target_identifier) testOptions.testTargetIdentifier = args.test_target_identifier as string;
+            if (args.test_target_name) testOptions.testTargetName = args.test_target_name as string;
+            
             return await BuildTools.test(
               args.xcodeproj as string, 
               (args.command_line_arguments as string[]) || [], 
-              this.openProject.bind(this)
+              this.openProject.bind(this),
+              Object.keys(testOptions).length > 0 ? testOptions : undefined
             );
           case 'xcode_run':
             if (!args.xcodeproj) {
@@ -968,6 +983,24 @@ export class XcodeServer {
               args.attachment_index as number,
               args.convert_to_json as boolean | undefined
             );
+          case 'xcode_get_test_targets':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
+            return await ProjectTools.getTestTargets(args.xcodeproj as string);
+          case 'xcode_refresh_project':
+            if (!args.xcodeproj) {
+              throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+            }
+            // Close and reopen the project to refresh it
+            await ProjectTools.closeProject();
+            const refreshResult = await ProjectTools.openProjectAndWaitForLoad(args.xcodeproj as string);
+            return {
+              content: [{
+                type: 'text',
+                text: `Project refreshed: ${refreshResult.content?.[0]?.type === 'text' ? refreshResult.content[0].text : 'Completed'}`
+              }]
+            };
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -1371,6 +1404,24 @@ export class XcodeServer {
             args.attachment_index as number,
             args.convert_to_json as boolean | undefined
           );
+        case 'xcode_get_test_targets':
+          if (!args.xcodeproj) {
+            throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+          }
+          return await ProjectTools.getTestTargets(args.xcodeproj as string);
+        case 'xcode_refresh_project':
+          if (!args.xcodeproj) {
+            throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+          }
+          // Close and reopen the project to refresh it
+          await ProjectTools.closeProject();
+          const refreshResult = await ProjectTools.openProjectAndWaitForLoad(args.xcodeproj as string);
+          return {
+            content: [{
+              type: 'text',
+              text: `Project refreshed: ${refreshResult.content?.[0]?.type === 'text' ? refreshResult.content[0].text : 'Completed'}`
+            }]
+          };
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,

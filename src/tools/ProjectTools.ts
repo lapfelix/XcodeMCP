@@ -469,4 +469,88 @@ export class ProjectTools {
     
     return { content: [{ type: 'text', text: result }] };
   }
+
+  /**
+   * Get test targets information from project
+   */
+  public static async getTestTargets(projectPath: string): Promise<McpResult> {
+    try {
+      const { promises: fs } = await import('fs');
+      
+      // Read the project.pbxproj file
+      const pbxprojPath = `${projectPath}/project.pbxproj`;
+      const projectContent = await fs.readFile(pbxprojPath, 'utf8');
+      
+      // Parse test targets from the project file
+      const testTargets: Array<{ name: string; identifier: string; productType: string }> = [];
+      
+      // Find PBXNativeTarget sections that are test targets
+      const targetMatches = projectContent.matchAll(/([A-F0-9]{24}) \/\* (.+?) \*\/ = {\s*isa = PBXNativeTarget;[\s\S]*?productType = "([^"]+)";/g);
+      
+      for (const match of targetMatches) {
+        const [, identifier, name, productType] = match;
+        
+        // Only include test targets (with null checks)
+        if (identifier && name && productType && 
+            (productType.includes('test') || productType.includes('xctest'))) {
+          testTargets.push({
+            name: name.trim(),
+            identifier: identifier.trim(),
+            productType: productType.trim()
+          });
+        }
+      }
+      
+      if (testTargets.length === 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: `📋 TEST TARGETS\n\n⚠️ No test targets found in project.\n\nThis could mean:\n  • No test targets are configured\n  • Project file parsing failed\n  • Test targets use a different naming convention`
+          }]
+        };
+      }
+      
+      // Helper function to convert product type to human-readable name
+      const getHumanReadableProductType = (productType: string): string => {
+        switch (productType) {
+          case 'com.apple.product-type.bundle.unit-test':
+            return 'Unit Tests';
+          case 'com.apple.product-type.bundle.ui-testing':
+            return 'UI Tests';
+          default:
+            return 'Tests';
+        }
+      };
+      
+      let message = `📋 TEST TARGETS\n\n`;
+      message += `Found ${testTargets.length} test target(s):\n\n`;
+      
+      testTargets.forEach((target, index) => {
+        const testType = getHumanReadableProductType(target.productType);
+        message += `${index + 1}. **${target.name}** (${testType})\n\n`;
+      });
+      
+      message += `💡 Usage Examples:\n`;
+      if (testTargets.length > 0) {
+        message += `  • --test-target-name "${testTargets[0]?.name}"\n\n`;
+      }
+      message += `📝 Use --test-target-name with the target name for test filtering`;
+      
+      return {
+        content: [{
+          type: 'text',
+          text: message
+        }]
+      };
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        content: [{
+          type: 'text',
+          text: `Failed to get test targets: ${errorMessage}`
+        }]
+      };
+    }
+  }
 }
