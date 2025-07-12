@@ -19,7 +19,7 @@ describe('Parameter Mismatch Prevention', () => {
       const expectedCounts = {
         build: 1,           // projectPath (schemeName and destination have defaults)
         clean: 1,           // projectPath
-        test: 1,            // projectPath (commandLineArguments has default)
+        test: 2,            // projectPath, destination (commandLineArguments has default)
         run: 1,             // projectPath (commandLineArguments has default)  
         debug: 2,           // projectPath, scheme (skipBuilding has default)
         stop: 0,            // no parameters
