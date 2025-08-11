@@ -1,5 +1,6 @@
 import { JXAExecutor } from '../utils/JXAExecutor.js';
 import { PathValidator } from '../utils/PathValidator.js';
+import { getWorkspaceByPathScript } from '../utils/JXAHelpers.js';
 import type { McpResult, OpenProjectCallback } from '../types/index.js';
 
 export class InfoTools {
@@ -11,9 +12,7 @@ export class InfoTools {
 
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         const info = {
           name: workspace.name(),
@@ -39,9 +38,7 @@ export class InfoTools {
 
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         const projects = workspace.projects();
         const projectInfo = projects.map(project => ({

@@ -2,6 +2,7 @@ import { JXAExecutor } from '../utils/JXAExecutor.js';
 import { PathValidator } from '../utils/PathValidator.js';
 import { ParameterNormalizer } from '../utils/ParameterNormalizer.js';
 import { ErrorHelper } from '../utils/ErrorHelper.js';
+import { getWorkspaceByPathScript } from '../utils/JXAHelpers.js';
 import type { McpResult, OpenProjectCallback } from '../types/index.js';
 
 export class ProjectTools {
@@ -165,14 +166,13 @@ export class ProjectTools {
     }
   }
 
-  public static async waitForProjectToLoad(maxRetries: number = 30, retryDelayMs: number = 1000): Promise<McpResult | null> {
+  public static async waitForProjectToLoad(projectPath: string, maxRetries: number = 30, retryDelayMs: number = 1000): Promise<McpResult | null> {
     const checkScript = `
       (function() {
         try {
-          const app = Application('Xcode');
-          const workspace = app.activeWorkspaceDocument();
+          ${getWorkspaceByPathScript(projectPath)}
           if (!workspace) {
-            return JSON.stringify({ loaded: false, reason: 'No active workspace' });
+            return JSON.stringify({ loaded: false, reason: 'Workspace not found' });
           }
           
           // Try to access schemes - this will fail if project is still loading
@@ -233,8 +233,7 @@ export class ProjectTools {
       const checkScript = `
         (function() {
           try {
-            const app = Application('Xcode');
-            const workspace = app.activeWorkspaceDocument();
+            ${getWorkspaceByPathScript(projectPath)}
             if (!workspace) {
               return JSON.stringify({ isOpen: false });
             }
@@ -271,7 +270,7 @@ export class ProjectTools {
     }
 
     // Wait for the project to load
-    const waitResult = await this.waitForProjectToLoad();
+    const waitResult = await this.waitForProjectToLoad(projectPath);
     if (waitResult) {
       return waitResult;
     }
@@ -279,13 +278,12 @@ export class ProjectTools {
     return { content: [{ type: 'text', text: 'Project opened and loaded successfully' }] };
   }
 
-  public static async closeProject(): Promise<McpResult> {
+  public static async closeProject(projectPath: string): Promise<McpResult> {
     // Simplified close project to prevent crashes - just close without complex error handling
     const closeScript = `
       (function() {
         try {
-          const app = Application('Xcode');
-          const workspace = app.activeWorkspaceDocument();
+          ${getWorkspaceByPathScript(projectPath)}
           if (!workspace) {
             return 'No workspace to close (already closed)';
           }
@@ -317,9 +315,7 @@ export class ProjectTools {
 
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         const schemes = workspace.schemes();
         const activeScheme = workspace.activeScheme();
@@ -364,9 +360,7 @@ export class ProjectTools {
 
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         const schemes = workspace.schemes();
         const schemeNames = schemes.map(scheme => scheme.name());
@@ -437,9 +431,7 @@ export class ProjectTools {
 
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         const destinations = workspace.runDestinations();
         const activeDestination = workspace.activeRunDestination();

@@ -255,6 +255,15 @@ export class MockJXAExecutor {
         return 'Project close initiated';
       }
       
+      // Handle workspaceDocuments() iteration pattern for finding workspace by path
+      if (script.includes('workspaceDocuments()')) {
+        if (!this.state.activeProject) {
+          throw new Error('Workspace not found for path');
+        }
+        // For mock, just return success as if we found the workspace
+        // The rest of the script will continue normally
+      }
+      
       // Handle specific activeWorkspaceDocument() patterns first
       if (script.includes('activeWorkspaceDocument()')) {
         if (!this.state.activeProject) {

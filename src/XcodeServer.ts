@@ -766,7 +766,7 @@ export class XcodeServer {
               const validationError = PathValidator.validateProjectPath(args.xcodeproj as string);
               if (validationError) return validationError;
               
-              const closeResult = await ProjectTools.closeProject();
+              const closeResult = await ProjectTools.closeProject(args.xcodeproj as string);
               this.currentProjectPath = null;
               return closeResult;
             } catch (closeError) {
@@ -854,7 +854,10 @@ export class XcodeServer {
               this.openProject.bind(this)
             );
           case 'xcode_stop':
-            return await BuildTools.stop();
+            if (!args.xcodeproj) {
+              return { content: [{ type: 'text', text: 'Error: xcodeproj parameter is required' }] };
+            }
+            return await BuildTools.stop(args.xcodeproj as string);
           case 'find_xcresults':
             if (!args.xcodeproj) {
               throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
@@ -1000,7 +1003,7 @@ export class XcodeServer {
               throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
             }
             // Close and reopen the project to refresh it
-            await ProjectTools.closeProject();
+            await ProjectTools.closeProject(args.xcodeproj as string);
             const refreshResult = await ProjectTools.openProjectAndWaitForLoad(args.xcodeproj as string);
             return {
               content: [{
@@ -1097,9 +1100,12 @@ export class XcodeServer {
     return BuildTools.debug(projectPath, scheme, skipBuilding, this.openProject.bind(this));
   }
 
-  public async stop(): Promise<import('./types/index.js').McpResult> {
+  public async stop(projectPath?: string): Promise<import('./types/index.js').McpResult> {
+    if (!projectPath) {
+      return { content: [{ type: 'text', text: 'Error: projectPath parameter is required' }] };
+    }
     const { BuildTools } = await import('./tools/BuildTools.js');
-    return BuildTools.stop();
+    return BuildTools.stop(projectPath);
   }
 
   public async getSchemes(projectPath: string): Promise<import('./types/index.js').McpResult> {
@@ -1209,7 +1215,7 @@ export class XcodeServer {
             const validationError = PathValidator.validateProjectPath(args.xcodeproj as string);
             if (validationError) return validationError;
             
-            const closeResult = await ProjectTools.closeProject();
+            const closeResult = await ProjectTools.closeProject(args.xcodeproj as string);
             this.currentProjectPath = null;
             return closeResult;
           } catch (closeError) {
@@ -1282,7 +1288,10 @@ export class XcodeServer {
             this.openProject.bind(this)
           );
         case 'xcode_stop':
-          return await BuildTools.stop();
+          if (!args.xcodeproj) {
+            throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
+          }
+          return await BuildTools.stop(args.xcodeproj as string);
         case 'find_xcresults':
           if (!args.xcodeproj) {
             throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
@@ -1428,7 +1437,7 @@ export class XcodeServer {
             throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
           }
           // Close and reopen the project to refresh it
-          await ProjectTools.closeProject();
+          await ProjectTools.closeProject(args.xcodeproj as string);
           const refreshResult = await ProjectTools.openProjectAndWaitForLoad(args.xcodeproj as string);
           return {
             content: [{

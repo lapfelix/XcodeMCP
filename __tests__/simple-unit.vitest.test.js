@@ -161,9 +161,12 @@ describe('XcodeMCPServer Basic Tests', () => {
     // Validate JXA script structure and formatting
     expect(generatedScript).toContain('(function() {');
     expect(generatedScript).toContain('const app = Application(\'Xcode\');');
-    expect(generatedScript).toContain('const workspace = app.activeWorkspaceDocument();');
+    expect(generatedScript).toContain('workspaceDocuments()');
     expect(generatedScript).toContain('if (!workspace)');
     expect(generatedScript).toContain('})()');
+    
+    // Should use the new workspace finding mechanism
+    expect(generatedScript).toContain('Find the workspace document matching the target path');
     
     // Validate proper error handling
     expect(generatedScript).toContain('throw new Error');

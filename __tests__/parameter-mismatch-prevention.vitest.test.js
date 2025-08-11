@@ -22,7 +22,7 @@ describe('Parameter Mismatch Prevention', () => {
         test: 2,            // projectPath, destination (commandLineArguments has default)
         run: 1,             // projectPath (commandLineArguments has default)  
         debug: 2,           // projectPath, scheme (skipBuilding has default)
-        stop: 0,            // no parameters
+        stop: 1,            // projectPath
         getSchemes: 1,      // projectPath
         getRunDestinations: 1, // projectPath
         setActiveScheme: 2, // projectPath, schemeName
@@ -74,7 +74,7 @@ describe('Parameter Mismatch Prevention', () => {
         { tool: 'xcode_test', method: 'test', args: ['args.path', 'args.commandLineArguments'] },
         { tool: 'xcode_run', method: 'run', args: ['args.path', 'args.commandLineArguments'] },
         { tool: 'xcode_debug', method: 'debug', args: ['args.path', 'args.scheme', 'args.skipBuilding'] },
-        { tool: 'xcode_stop', method: 'stop', args: [] },
+        { tool: 'xcode_stop', method: 'stop', args: ['args.xcodeproj'] },
         { tool: 'xcode_get_schemes', method: 'getSchemes', args: ['args.path'] },
         { tool: 'xcode_set_active_scheme', method: 'setActiveScheme', args: ['args.path', 'args.schemeName'] },
         { tool: 'xcode_get_run_destinations', method: 'getRunDestinations', args: ['args.path'] },

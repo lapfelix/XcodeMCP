@@ -9,6 +9,7 @@ import { ErrorHelper } from '../utils/ErrorHelper.js';
 import { ParameterNormalizer } from '../utils/ParameterNormalizer.js';
 import { Logger } from '../utils/Logger.js';
 import { XCResultParser } from '../utils/XCResultParser.js';
+import { getWorkspaceByPathScript } from '../utils/JXAHelpers.js';
 import type { McpResult, OpenProjectCallback } from '../types/index.js';
 
 export class BuildTools {
@@ -28,9 +29,7 @@ export class BuildTools {
     
     const setSchemeScript = `
         (function() {
-          const app = Application('Xcode');
-          const workspace = app.activeWorkspaceDocument();
-          if (!workspace) throw new Error('No active workspace');
+          ${getWorkspaceByPathScript(projectPath)}
           
           const schemes = workspace.schemes();
           const schemeNames = schemes.map(scheme => scheme.name());
@@ -64,7 +63,7 @@ export class BuildTools {
         if (errorMessage.includes('not found')) {
           try {
             // Get available schemes
-            const availableSchemes = await this._getAvailableSchemes();
+            const availableSchemes = await this._getAvailableSchemes(projectPath);
               
             // Try to find a close match with fuzzy matching
             const bestMatch = ParameterNormalizer.findBestMatch(schemeName, availableSchemes);
@@ -93,9 +92,7 @@ export class BuildTools {
       
       const setDestinationScript = `
         (function() {
-          const app = Application('Xcode');
-          const workspace = app.activeWorkspaceDocument();
-          if (!workspace) throw new Error('No active workspace');
+          ${getWorkspaceByPathScript(projectPath)}
           
           const destinations = workspace.runDestinations();
           const destinationNames = destinations.map(dest => dest.name());
@@ -138,11 +135,11 @@ export class BuildTools {
                 try {
                   availableDestinations = JSON.parse(jsonMatch[0]);
                 } catch {
-                  availableDestinations = await this._getAvailableDestinations();
+                  availableDestinations = await this._getAvailableDestinations(projectPath);
                 }
               }
             } else {
-              availableDestinations = await this._getAvailableDestinations();
+              availableDestinations = await this._getAvailableDestinations(projectPath);
             }
               
             // Try to find a close match with fuzzy matching
@@ -165,9 +162,7 @@ export class BuildTools {
 
     const buildScript = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         workspace.build();
         
@@ -315,9 +310,7 @@ export class BuildTools {
 
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         const actionResult = workspace.clean();
         
@@ -361,9 +354,7 @@ export class BuildTools {
       
       const setDestinationScript = `
         (function() {
-          const app = Application('Xcode');
-          const workspace = app.activeWorkspaceDocument();
-          if (!workspace) throw new Error('No active workspace');
+          ${getWorkspaceByPathScript(projectPath)}
           
           const destinations = workspace.runDestinations();
           const destinationNames = destinations.map(dest => dest.name());
@@ -533,9 +524,7 @@ export class BuildTools {
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         ${hasArgs 
           ? `const actionResult = workspace.test({withCommandLineArguments: ${JSON.stringify(commandLineArguments)}});`
@@ -680,8 +669,7 @@ export class BuildTools {
           // Check test completion via AppleScript every 30 seconds
           const checkScript = `
             (function() {
-              const app = Application('Xcode');
-              const workspace = app.activeWorkspaceDocument();
+              ${getWorkspaceByPathScript(projectPath)}
               if (!workspace) return 'No workspace';
               
               const actions = workspace.schemeActionResults();
@@ -988,9 +976,7 @@ export class BuildTools {
     
     const setSchemeScript = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         const schemes = workspace.schemes();
         const schemeNames = schemes.map(scheme => scheme.name());
@@ -1024,7 +1010,7 @@ export class BuildTools {
       if (errorMessage.includes('not found')) {
         try {
           // Get available schemes
-          const availableSchemes = await this._getAvailableSchemes();
+          const availableSchemes = await this._getAvailableSchemes(projectPath);
             
           // Try to find a close match with fuzzy matching
           const bestMatch = ParameterNormalizer.findBestMatch(schemeName, availableSchemes);
@@ -1052,9 +1038,7 @@ export class BuildTools {
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         ${hasArgs 
           ? `const result = workspace.run({withCommandLineArguments: ${JSON.stringify(commandLineArguments)}});`
@@ -1091,8 +1075,7 @@ export class BuildTools {
         // Check run completion via AppleScript every 10 seconds
         const checkScript = `
           (function() {
-            const app = Application('Xcode');
-            const workspace = app.activeWorkspaceDocument();
+            ${getWorkspaceByPathScript(projectPath)}
             if (!workspace) return 'No workspace';
             
             const actions = workspace.schemeActionResults();
@@ -1206,9 +1189,7 @@ export class BuildTools {
     
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         ${hasParams 
           ? `const result = workspace.debug(${JSON.stringify(paramsObj)});`
@@ -1226,12 +1207,10 @@ export class BuildTools {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  public static async stop(): Promise<McpResult> {
+  public static async stop(projectPath: string): Promise<McpResult> {
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
-        if (!workspace) throw new Error('No active workspace');
+        ${getWorkspaceByPathScript(projectPath)}
         
         workspace.stop();
         return 'Stop command sent';
@@ -1242,11 +1221,10 @@ export class BuildTools {
     return { content: [{ type: 'text', text: result }] };
   }
 
-  private static async _getAvailableSchemes(): Promise<string[]> {
+  private static async _getAvailableSchemes(projectPath: string): Promise<string[]> {
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
+        ${getWorkspaceByPathScript(projectPath)}
         if (!workspace) return JSON.stringify([]);
         
         const schemes = workspace.schemes();
@@ -1263,11 +1241,10 @@ export class BuildTools {
     }
   }
 
-  private static async _getAvailableDestinations(): Promise<string[]> {
+  private static async _getAvailableDestinations(projectPath: string): Promise<string[]> {
     const script = `
       (function() {
-        const app = Application('Xcode');
-        const workspace = app.activeWorkspaceDocument();
+        ${getWorkspaceByPathScript(projectPath)}
         if (!workspace) return [];
         
         const destinations = workspace.runDestinations();

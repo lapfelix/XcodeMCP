@@ -141,9 +141,10 @@ describe('ProjectTools', () => {
   describe('closeProject', () => {
     it('should successfully close the current project', async () => {
       // First open a project
-      await ProjectTools.openProject('/Users/test/MyApp/MyApp.xcodeproj');
+      const projectPath = '/Users/test/MyApp/MyApp.xcodeproj';
+      await ProjectTools.openProject(projectPath);
       
-      const result = await ProjectTools.closeProject();
+      const result = await ProjectTools.closeProject(projectPath);
 
       expect(result.content).toEqual([
         { type: 'text', text: expect.stringContaining('closed successfully') }

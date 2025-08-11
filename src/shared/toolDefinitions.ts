@@ -197,10 +197,16 @@ export function getToolDefinitions(): ToolDefinition[] {
     },
     {
       name: 'xcode_stop',
-      description: 'Stop the current scheme action',
+      description: 'Stop the current scheme action for a specific project',
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: {
+          xcodeproj: {
+            type: 'string',
+            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+          },
+        },
+        required: ['xcodeproj'],
       },
     },
     {

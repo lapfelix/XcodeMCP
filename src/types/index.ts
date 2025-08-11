@@ -74,6 +74,10 @@ export interface JXAWorkspace {
   run(options?: { withCommandLineArguments?: string[] }): JXAActionResult;
   debug(options?: { scheme?: string; skipBuilding?: boolean }): JXAActionResult;
   stop(): void;
+  path(): string;
+  name(): string;
+  loaded(): boolean;
+  close(): void;
 }
 
 export interface JXAActionResult {
@@ -83,6 +87,7 @@ export interface JXAActionResult {
 
 export interface JXAApplication {
   activeWorkspaceDocument(): JXAWorkspace | null;
+  workspaceDocuments(): JXAWorkspace[];
 }
 
 export interface OpenProjectCallback {
