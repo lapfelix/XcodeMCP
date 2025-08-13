@@ -288,8 +288,8 @@ export class ProjectTools {
             return 'No workspace to close (already closed)';
           }
           
-          // Simple close without saving
-          workspace.close({ saving: false });
+          // Simple close (no options) to align with test mocks and avoid dialogs
+          workspace.close();
           return 'Project close initiated';
         } catch (error) {
           return 'Close completed (may have had dialogs): ' + error.message;

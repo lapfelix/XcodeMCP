@@ -260,8 +260,25 @@ export class MockJXAExecutor {
         if (!this.state.activeProject) {
           throw new Error('Workspace not found for path');
         }
-        // For mock, just return success as if we found the workspace
-        // The rest of the script will continue normally
+        
+        // Check if this is the wait for load script (has workspaceDocuments + JSON.stringify({ loaded:)
+        if (script.includes('JSON.stringify({ loaded:')) {
+          return JSON.stringify({ loaded: true, schemes: 2, destinations: 5 });
+        }
+        
+        // Check if this is the close project script (has workspaceDocuments + .close())
+        if (script.includes('.close()')) {
+          this.state.activeProject = null;
+          this.state.activeScheme = null;
+          this.state.buildInProgress = false;
+          this.state.testInProgress = false;
+          this.state.runInProgress = false;
+          this.state.debugInProgress = false;
+          return 'Project close initiated';
+        }
+        
+        // For other workspace finding scripts, just continue - don't return here
+        // The script will continue to other handlers
       }
       
       // Handle specific activeWorkspaceDocument() patterns first

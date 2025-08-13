@@ -209,7 +209,7 @@ describe('XcodeMCPServer Basic Tests', () => {
     expect(generatedScript).not.toContain(',,'); // No empty array/object elements
     
     // Validate proper string escaping (important for path handling)
-    expect(generatedScript).toContain('throw new Error(\'No active workspace\')');
+    expect(generatedScript).toContain('throw new Error(\'Workspace not found for path:');
     
     // Test should return expected MCP result format
     expect(result).toHaveProperty('content');

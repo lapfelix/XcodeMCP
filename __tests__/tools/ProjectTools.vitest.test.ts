@@ -134,7 +134,7 @@ describe('ProjectTools', () => {
       // Should call at least one JXA script (either check if already open, or open project + wait for load)
       // Use the global mock from setup.ts instead of local mock
       const globalMock = getGlobalJXAMock();
-      expect(globalMock).toHaveBeenCalledTimes(1);
+      expect(globalMock).toHaveBeenCalledTimes(3); // Check if open, open project, wait for load
     });
   });
 
@@ -147,7 +147,7 @@ describe('ProjectTools', () => {
       const result = await ProjectTools.closeProject(projectPath);
 
       expect(result.content).toEqual([
-        { type: 'text', text: expect.stringContaining('closed successfully') }
+        { type: 'text', text: expect.stringContaining('close initiated') }
       ]);
       
       const state = jxaMock.getState();
