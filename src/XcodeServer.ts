@@ -159,7 +159,7 @@ export class XcodeServer {
       return { blocked: false, degraded: false };
     }
 
-    const buildTools = ['xcode_build', 'xcode_test', 'xcode_run', 'xcode_debug', 'xcode_clean'];
+    const buildTools = ['xcode_build', 'xcode_test', 'xcode_build_and_run', 'xcode_debug', 'xcode_clean'];
     const xcodeTools = [...buildTools, 'xcode_open_project', 'xcode_get_schemes', 'xcode_set_active_scheme', 
                        'xcode_get_run_destinations', 'xcode_get_workspace_info', 'xcode_get_projects'];
     const xcresultTools = ['xcresult_browse', 'xcresult_browser_get_console', 'xcresult_summary', 'xcresult_get_screenshot', 'xcresult_get_ui_hierarchy', 'xcresult_get_ui_element', 'xcresult_list_attachments', 'xcresult_export_attachment'];
@@ -414,7 +414,7 @@ export class XcodeServer {
               this.openProject.bind(this),
               Object.keys(testOptions).length > 0 ? testOptions : undefined
             );
-          case 'xcode_run':
+          case 'xcode_build_and_run':
             if (!args.xcodeproj) {
               throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
             }
@@ -851,7 +851,7 @@ export class XcodeServer {
             (args.command_line_arguments as string[]) || [], 
             this.openProject.bind(this)
           );
-        case 'xcode_run':
+        case 'xcode_build_and_run':
           if (!args.xcodeproj) {
             throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj`);
           }

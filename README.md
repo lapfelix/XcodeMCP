@@ -188,7 +188,7 @@ xcodecontrol xcresult-get-ui-hierarchy --xcresult-path /path/to/result.xcresult 
 CLI commands use kebab-case instead of underscores:
 - `xcode_build` → `build`
 - `xcode_test` → `test`  
-- `xcode_run` → `run`
+- `xcode_build_and_run` → `build-and-run`
 - `xcode_health_check` → `health-check`
 - `xcresult_browse` → `xcresult-browse`
 - `find_xcresults` → `find-xcresults`
@@ -205,7 +205,7 @@ CLI commands use kebab-case instead of underscores:
 - `xcode_build` - Build with detailed error parsing
 - `xcode_clean` - Clean build artifacts
 - `xcode_test` - Run tests with optional arguments
-- `xcode_run` - Run the active scheme
+- `xcode_build_and_run` - Build and run the active scheme
 - `xcode_debug` - Start debugging session
 - `xcode_stop` - Stop current operation
 

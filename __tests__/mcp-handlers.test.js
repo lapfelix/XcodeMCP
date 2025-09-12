@@ -91,7 +91,7 @@ describeIfXcode('MCP Tool Handlers', () => {
       expect(toolNames).toContain('xcode_open_project');
       expect(toolNames).toContain('xcode_build');
       expect(toolNames).toContain('xcode_test');
-      expect(toolNames).toContain('xcode_run');
+      expect(toolNames).toContain('xcode_build_and_run');
       expect(toolNames).toContain('xcode_debug');
     });
 

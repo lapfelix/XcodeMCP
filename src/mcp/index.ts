@@ -199,8 +199,8 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcode_run',
-        description: 'Run a specific project with the specified scheme',
+        name: 'xcode_build_and_run',
+        description: 'Build and run a specific project with the specified scheme',
         inputSchema: {
           type: 'object',
           properties: {

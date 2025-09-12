@@ -156,7 +156,7 @@ async function main() {
             console.log('');
             // Define command categories
             const buildAndRunCommands = [
-                'build', 'run', 'debug', 'stop',
+                'build', 'build-and-run', 'debug', 'stop',
                 'get-run-destinations'
             ];
             // Add clean only if not disabled

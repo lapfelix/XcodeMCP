@@ -31,7 +31,7 @@ describe('XcodeMCP Server Functional Tests', () => {
       'xcode_build', 
       'xcode_clean',
       'xcode_test',
-      'xcode_run',
+      'xcode_build_and_run',
       'xcode_debug',
       'xcode_stop',
       'xcode_get_schemes',
@@ -45,7 +45,7 @@ describe('XcodeMCP Server Functional Tests', () => {
     expect(expectedTools.length).toBe(13);
     expect(expectedTools).toContain('xcode_build');
     expect(expectedTools).toContain('xcode_test');
-    expect(expectedTools).toContain('xcode_run');
+    expect(expectedTools).toContain('xcode_build_and_run');
   });
 
   test('should validate JXA script generation patterns', () => {

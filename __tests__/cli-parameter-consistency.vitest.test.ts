@@ -19,7 +19,7 @@ describe('CLI Parameter Consistency', () => {
         expectedError: 'Project file does not exist', // Project not found, but parameters accepted
       },
       {
-        command: 'run --xcodeproj /fake/project.xcodeproj --scheme TestScheme --command-line-arguments arg1',
+        command: 'build-and-run --xcodeproj /fake/project.xcodeproj --scheme TestScheme --command-line-arguments arg1',
         expectedError: 'Project file does not exist', // Project not found, but parameters accepted
       },
       {
@@ -68,7 +68,7 @@ describe('CLI Parameter Consistency', () => {
       { command: 'open-file --help', expected: ['--file-path', '--line-number'] },
       { command: 'set-active-scheme --help', expected: ['--scheme-name'] },
       { command: 'test --help', expected: ['--command-line-arguments'] },
-      { command: 'run --help', expected: ['--command-line-arguments'] },
+      { command: 'build-and-run --help', expected: ['--command-line-arguments'] },
       { command: 'debug --help', expected: ['--skip-building'] },
       { command: 'xcresult-get-ui-element --help', expected: ['--hierarchy-json-path', '--element-index'] },
       { command: 'xcresult-export-attachment --help', expected: ['--attachment-index'] },

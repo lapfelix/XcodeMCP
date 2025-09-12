@@ -132,8 +132,8 @@ export function getToolDefinitions(options = { includeClean: true }) {
             },
         },
         {
-            name: 'xcode_run',
-            description: 'Run a specific project with the specified scheme. ⏱️ Can run indefinitely - do not timeout.',
+            name: 'xcode_build_and_run',
+            description: 'Build and run a specific project with the specified scheme. ⏱️ Can run indefinitely - do not timeout.',
             inputSchema: {
                 type: 'object',
                 properties: {

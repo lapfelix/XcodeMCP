@@ -74,7 +74,7 @@ describe('XcodeMCPServer Basic Tests', () => {
       'xcode_build',
       'xcode_clean',
       'xcode_test',
-      'xcode_run',
+      'xcode_build_and_run',
       'xcode_debug',
       'xcode_stop',
       'xcode_get_schemes',

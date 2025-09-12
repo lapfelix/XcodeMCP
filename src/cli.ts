@@ -177,7 +177,7 @@ async function main(): Promise<void> {
         
         // Define command categories
         const buildAndRunCommands = [
-          'build', 'run', 'debug', 'stop', 
+          'build', 'build-and-run', 'debug', 'stop', 
           'get-run-destinations'
         ];
         
