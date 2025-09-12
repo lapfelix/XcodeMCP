@@ -6,5 +6,7 @@ export interface ToolDefinition {
 /**
  * Get all tool definitions shared between CLI and MCP
  */
-export declare function getToolDefinitions(): ToolDefinition[];
+export declare function getToolDefinitions(options?: {
+    includeClean?: boolean;
+}): ToolDefinition[];
 //# sourceMappingURL=toolDefinitions.d.ts.map

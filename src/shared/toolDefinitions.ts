@@ -7,8 +7,9 @@ export interface ToolDefinition {
 /**
  * Get all tool definitions shared between CLI and MCP
  */
-export function getToolDefinitions(): ToolDefinition[] {
-  return [
+export function getToolDefinitions(options: { includeClean?: boolean } = { includeClean: true }): ToolDefinition[] {
+  const { includeClean = true } = options;
+  const tools: ToolDefinition[] = [
     {
       name: 'xcode_open_project',
       description: 'Open an Xcode project or workspace',
@@ -89,20 +90,6 @@ export function getToolDefinitions(): ToolDefinition[] {
           },
         },
         required: ['xcodeproj', 'scheme_name'],
-      },
-    },
-    {
-      name: 'xcode_clean',
-      description: 'Clean the build directory for a specific project',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          xcodeproj: {
-            type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
-          },
-        },
-        required: ['xcodeproj'],
       },
     },
     {
@@ -493,4 +480,24 @@ export function getToolDefinitions(): ToolDefinition[] {
       },
     },
   ];
+
+  // Conditionally add the clean tool
+  if (includeClean) {
+    tools.splice(5, 0, {
+      name: 'xcode_clean',
+      description: 'Clean the build directory for a specific project',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          xcodeproj: {
+            type: 'string',
+            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+          },
+        },
+        required: ['xcodeproj'],
+      },
+    });
+  }
+
+  return tools;
 }

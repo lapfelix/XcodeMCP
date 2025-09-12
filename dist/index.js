@@ -28,6 +28,9 @@ process.on('SIGINT', () => {
     process.exit(0);
 });
 export class XcodeMCPServer extends XcodeServer {
+    constructor(options = {}) {
+        super(options);
+    }
     async start(port) {
         try {
             // Initialize logging system
@@ -179,7 +182,10 @@ export class XcodeMCPServer extends XcodeServer {
 }
 // Only run if not in test environment
 if (process.env.NODE_ENV !== 'test') {
-    const server = new XcodeMCPServer();
+    // Check for --no-clean argument
+    const noCleanArg = process.argv.includes('--no-clean');
+    const includeClean = !noCleanArg;
+    const server = new XcodeMCPServer({ includeClean });
     // Check for port argument
     const portArg = process.argv.find(arg => arg.startsWith('--port='));
     const portValue = portArg?.split('=')[1];

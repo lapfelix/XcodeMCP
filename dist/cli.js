@@ -110,9 +110,12 @@ function formatResult(result, jsonOutput) {
 async function main() {
     try {
         const pkg = await loadPackageJson();
-        const server = new XcodeServer();
+        // Check for --no-clean argument early to configure both server and tools
+        const noCleanArg = process.argv.includes('--no-clean');
+        const includeClean = !noCleanArg;
+        const server = new XcodeServer({ includeClean });
         // Get tool definitions from shared source to ensure CLI is always in sync with MCP
-        const tools = getToolDefinitions();
+        const tools = getToolDefinitions({ includeClean });
         const program = new Command('xcodecontrol')
             .version(pkg.version)
             .description(`Command-line interface for Xcode automation and control
@@ -130,10 +133,13 @@ async function main() {
   • The CLI will wait for completion - do not manually timeout or interrupt
 
 💡 Use 'xcodecontrol list-tools' to see all commands organized by category
-💡 Use 'xcodecontrol <command> --help' for detailed help on any command`)
+💡 Use 'xcodecontrol <command> --help' for detailed help on any command
+
+🚫 Use 'xcodecontrol --no-clean' to disable the clean tool for safety`)
             .option('--json', 'Output results in JSON format', false)
             .option('-v, --verbose', 'Enable verbose output (shows INFO logs)', false)
-            .option('-q, --quiet', 'Suppress all logs except errors', false);
+            .option('-q, --quiet', 'Suppress all logs except errors', false)
+            .option('--no-clean', 'Disable the clean tool', false);
         // Add global help command
         program
             .command('help')
@@ -149,16 +155,21 @@ async function main() {
             console.log('Available tools organized by category:');
             console.log('');
             // Define command categories
+            const buildAndRunCommands = [
+                'build', 'run', 'debug', 'stop',
+                'get-run-destinations'
+            ];
+            // Add clean only if not disabled
+            if (includeClean) {
+                buildAndRunCommands.splice(1, 0, 'clean'); // Insert clean after build
+            }
             const categories = {
                 'Project Management': [
                     'open-project', 'close-project', 'refresh-project',
                     'get-schemes', 'set-active-scheme', 'get-projects',
                     'get-workspace-info', 'open-file'
                 ],
-                'Build & Run': [
-                    'build', 'clean', 'run', 'debug', 'stop',
-                    'get-run-destinations'
-                ],
+                'Build & Run': buildAndRunCommands,
                 'Testing': [
                     'test', 'get-test-targets'
                 ],

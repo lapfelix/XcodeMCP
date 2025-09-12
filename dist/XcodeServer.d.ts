@@ -7,7 +7,10 @@ export declare class XcodeServer {
     private environmentValidation;
     private isValidated;
     private canOperateInDegradedMode;
-    constructor();
+    private includeClean;
+    constructor(options?: {
+        includeClean?: boolean;
+    });
     /**
      * Validates the environment and sets up the server accordingly
      */
