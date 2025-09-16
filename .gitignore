@@ -3,3 +3,6 @@ CLAUDE.md
 coverage/
 .DS_Store
 dist/CLI_DISCREPANCIES.md
+
+# MCP Registry tokens
+.mcpregistry_*
