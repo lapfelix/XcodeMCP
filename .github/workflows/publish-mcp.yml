@@ -1,0 +1,99 @@
+name: Publish to MCP Registry
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+  # Auto-trigger on release
+  release:
+    types: [published]
+  # Auto-trigger when server.json is updated
+  push:
+    branches: [main]
+    paths:
+      - 'server.json'
+
+jobs:
+  publish-mcp:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Validate server.json
+      run: |
+        if [ ! -f server.json ]; then
+          echo "❌ server.json not found"
+          exit 1
+        fi
+        
+        # Basic JSON validation
+        if ! python3 -m json.tool server.json > /dev/null 2>&1; then
+          echo "❌ server.json is not valid JSON"
+          exit 1
+        fi
+        
+        echo "✅ server.json found and valid"
+        
+        # Extract info for verification
+        NAME=$(python3 -c "import json; print(json.load(open('server.json'))['name'])")
+        VERSION=$(python3 -c "import json; print(json.load(open('server.json'))['version'])")
+        
+        echo "📦 Server: $NAME@$VERSION"
+    
+    - name: Setup mcp-publisher
+      run: |
+        # Download and install mcp-publisher for Linux
+        curl -L "https://github.com/modelcontextprotocol/registry/releases/download/v1.0.0/mcp-publisher_1.0.0_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+        chmod +x mcp-publisher
+        sudo mv mcp-publisher /usr/local/bin/
+        
+        # Verify installation
+        mcp-publisher --version || echo "mcp-publisher installed"
+    
+    - name: Authenticate with MCP Registry
+      run: |
+        # Use GitHub token for authentication
+        # The publisher will use the GITHUB_TOKEN to authenticate
+        echo "Using GitHub token for authentication"
+    
+    - name: Publish to MCP Registry
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "Publishing server to MCP registry..."
+        
+        # The mcp-publisher will handle GitHub OAuth using the GITHUB_TOKEN
+        if mcp-publisher publish; then
+          echo "✅ Successfully published to MCP registry"
+        else
+          echo "❌ Failed to publish to MCP registry"
+          exit 1
+        fi
+    
+    - name: Create summary
+      if: success()
+      run: |
+        NAME=$(python3 -c "import json; print(json.load(open('server.json'))['name'])")
+        VERSION=$(python3 -c "import json; print(json.load(open('server.json'))['version'])")
+        
+        echo "## 🚀 Published to MCP Registry" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Server:** \`$NAME@$VERSION\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Your server is now available in the MCP registry!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Users can now discover and install your server through MCP-compatible clients." >> $GITHUB_STEP_SUMMARY
+    
+    - name: Failure notification
+      if: failure()
+      run: |
+        echo "## ❌ MCP Registry Publishing Failed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The server could not be published to the MCP registry." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Common issues:" >> $GITHUB_STEP_SUMMARY
+        echo "- Authentication failed (check GitHub token permissions)" >> $GITHUB_STEP_SUMMARY
+        echo "- server.json validation failed" >> $GITHUB_STEP_SUMMARY
+        echo "- Package validation failed (mcpName mismatch)" >> $GITHUB_STEP_SUMMARY
+        echo "- Network connectivity issues" >> $GITHUB_STEP_SUMMARY

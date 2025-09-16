@@ -2,6 +2,7 @@
   "name": "xcodemcp",
   "version": "2.1.1",
   "description": "Model Context Protocol server for Xcode build automation and log parsing",
+  "mcpName": "io.github.lapfelix/xcodemcp",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
