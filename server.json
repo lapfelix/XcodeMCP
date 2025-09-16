@@ -1,52 +1,23 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "io.github.lapfelix/xcodemcp",
-  "description": "Model Context Protocol server that controls Xcode directly through JavaScript for Automation (JXA). Provides build, test, run, debug operations and comprehensive build log parsing.",
-  "version": "2.1.1",
-  "homepage": "https://github.com/lapfelix/XcodeMCP",
-  "repository": "https://github.com/lapfelix/XcodeMCP",
-  "logo": "https://raw.githubusercontent.com/lapfelix/XcodeMCP/main/logo.png",
-  "keywords": [
-    "xcode",
-    "build",
-    "test",
-    "ios",
-    "macos",
-    "swift",
-    "automation",
-    "jxa",
-    "xclogparser",
-    "debugging"
-  ],
+  "description": "Control Xcode directly via JXA for build, test, debug operations with XCLogParser integration",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/lapfelix/XcodeMCP",
+    "source": "github"
+  },
+  "version": "2.1.2",
   "packages": [
     {
       "registry_type": "npm",
+      "registry_base_url": "https://registry.npmjs.org",
       "identifier": "xcodemcp",
-      "version": "2.1.1"
+      "version": "2.1.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "environment_variables": []
     }
-  ],
-  "tools": [
-    "xcode_build",
-    "xcode_test",
-    "xcode_run",
-    "xcode_debug",
-    "xcode_clean",
-    "xcode_stop",
-    "xcode_get_schemes",
-    "xcode_get_destinations",
-    "xcode_health_check",
-    "xcode_open_project",
-    "xcode_open_file",
-    "xcresult_browse",
-    "xcresult_get_screenshot",
-    "xcresult_browser_get_console",
-    "find_xcresults"
-  ],
-  "platforms": [
-    "macos"
-  ],
-  "languages": [
-    "typescript",
-    "javascript"
   ]
 }
