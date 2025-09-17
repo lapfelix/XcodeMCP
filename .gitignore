@@ -6,3 +6,10 @@ dist/CLI_DISCREPANCIES.md
 
 # MCP Registry tokens
 .mcpregistry_*
+
+# Development artifacts
+*.log
+repomix-output.xml
+.DS_Store
+test-*.js
+test-*.sh
