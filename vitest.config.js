@@ -5,7 +5,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     testTimeout: 10000,
-    setupFiles: ['./__tests__/setup.js'],
+    setupFiles: ['./__tests__/setup.ts'],
     include: ['__tests__/**/*.vitest.test.{js,ts}'],
     exclude: ['node_modules', 'dist'],
     coverage: {
@@ -13,7 +13,7 @@ export default defineConfig({
       exclude: [
         'node_modules/',
         '__tests__/',
-        '__tests__/setup.js',
+        '__tests__/setup.ts',
         'vitest.config.js',
         'dist/'
       ]
