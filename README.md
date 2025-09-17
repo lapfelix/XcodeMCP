@@ -92,6 +92,28 @@ claude mcp add-json XcodeMCP '{
 }'
 ```
 
+#### Using Preferred Values for Single Project Workflows
+
+For projects where you're working with a single xcodeproj and scheme, you can configure preferred values to make tool parameters optional:
+
+```bash
+claude mcp add-json XcodeMCP '{
+  "command": "npx",
+  "args": ["-y", "xcodemcp@latest"],
+  "env": {
+    "LOG_LEVEL": "INFO",
+    "XCODE_MCP_PREFERRED_SCHEME": "MyApp",
+    "XCODE_MCP_PREFERRED_XCODEPROJ": "MyApp.xcodeproj"
+  }
+}'
+```
+
+With preferred values configured:
+- Tool parameters become optional instead of required
+- Tool descriptions show default values (e.g., "defaults to MyApp.xcodeproj")
+- You can still override defaults by providing explicit parameters
+- Reduces repetition when working with a single project
+
 #### Troubleshooting
 
 If `/mcp` in Claude Code indicates the MCP failed, try running it from the project folder manually to see what the output is: `npx -y xcodemcp@latest`
