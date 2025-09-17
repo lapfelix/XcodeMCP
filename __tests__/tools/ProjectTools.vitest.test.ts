@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mockJXAExecutor, MockJXAExecutor } from '../mocks/MockJXAExecutor.js';
 import { mockFileSystem, MockFileSystem } from '../mocks/MockFileSystem.js';
-import { getGlobalJXAMock } from '../setup.js';
+import { getGlobalJXAMock } from '../setup.ts';
 
 // Mock child_process module
 vi.mock('child_process', () => ({
