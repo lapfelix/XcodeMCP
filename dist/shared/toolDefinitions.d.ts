@@ -8,5 +8,7 @@ export interface ToolDefinition {
  */
 export declare function getToolDefinitions(options?: {
     includeClean?: boolean;
+    preferredScheme?: string;
+    preferredXcodeproj?: string;
 }): ToolDefinition[];
 //# sourceMappingURL=toolDefinitions.d.ts.map

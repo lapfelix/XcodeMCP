@@ -28,9 +28,26 @@ export class XcodeServer {
   private isValidated = false;
   private canOperateInDegradedMode = false;
   private includeClean: boolean;
+  private preferredScheme: string | undefined;
+  private preferredXcodeproj: string | undefined;
 
-  constructor(options: { includeClean?: boolean } = {}) {
+  constructor(options: { 
+    includeClean?: boolean;
+    preferredScheme?: string;
+    preferredXcodeproj?: string;
+  } = {}) {
     this.includeClean = options.includeClean ?? true;
+    this.preferredScheme = options.preferredScheme;
+    this.preferredXcodeproj = options.preferredXcodeproj;
+    
+    // Log preferred values if set
+    if (this.preferredScheme) {
+      Logger.info(`Using preferred scheme: ${this.preferredScheme}`);
+    }
+    if (this.preferredXcodeproj) {
+      Logger.info(`Using preferred xcodeproj: ${this.preferredXcodeproj}`);
+    }
+    
     this.server = new Server(
       {
         name: 'xcode-mcp-server',
@@ -282,7 +299,16 @@ export class XcodeServer {
 
   private setupToolHandlers(): void {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const toolDefinitions = getToolDefinitions({ includeClean: this.includeClean });
+      const toolOptions: {
+        includeClean: boolean;
+        preferredScheme?: string;
+        preferredXcodeproj?: string;
+      } = { includeClean: this.includeClean };
+      
+      if (this.preferredScheme) toolOptions.preferredScheme = this.preferredScheme;
+      if (this.preferredXcodeproj) toolOptions.preferredXcodeproj = this.preferredXcodeproj;
+      
+      const toolDefinitions = getToolDefinitions(toolOptions);
       return {
         tools: toolDefinitions.map(tool => ({
           name: tool.name,
@@ -294,6 +320,14 @@ export class XcodeServer {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request: any): Promise<CallToolResult> => {
       const { name, arguments: args = {} } = request.params as { name: string; arguments?: Record<string, unknown> };
+
+      // Apply preferred values if parameters not provided
+      if (!args.xcodeproj && this.preferredXcodeproj) {
+        args.xcodeproj = this.preferredXcodeproj;
+      }
+      if (!args.scheme && this.preferredScheme) {
+        args.scheme = this.preferredScheme;
+      }
 
       // Resolve relative paths to absolute paths
       if (args.xcodeproj && typeof args.xcodeproj === 'string') {
@@ -329,7 +363,9 @@ export class XcodeServer {
             if (!args.xcodeproj) {
               throw new McpError(
                 ErrorCode.InvalidParams,
-                `Missing required parameter: xcodeproj\n\n💡 Expected: absolute path to .xcodeproj or .xcworkspace file`
+                this.preferredXcodeproj 
+                  ? `Missing required parameter: xcodeproj (no preferred value was applied)\n\n💡 Expected: absolute path to .xcodeproj or .xcworkspace file`
+                  : `Missing required parameter: xcodeproj\n\n💡 Expected: absolute path to .xcodeproj or .xcworkspace file`
               );
             }
             const result = await ProjectTools.openProject(args.xcodeproj as string);

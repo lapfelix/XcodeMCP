@@ -35,7 +35,11 @@ process.on('SIGINT', () => {
 });
 
 export class XcodeMCPServer extends XcodeServer {
-  constructor(options: { includeClean?: boolean } = {}) {
+  constructor(options: { 
+    includeClean?: boolean;
+    preferredScheme?: string;
+    preferredXcodeproj?: string;
+  } = {}) {
     super(options);
   }
 
@@ -200,7 +204,23 @@ if (process.env.NODE_ENV !== 'test') {
   const noCleanArg = process.argv.includes('--no-clean');
   const includeClean = !noCleanArg;
   
-  const server = new XcodeMCPServer({ includeClean });
+  // Check for preferred values from environment variables or command-line arguments
+  const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME || 
+    process.argv.find(arg => arg.startsWith('--preferred-scheme='))?.split('=')[1];
+  
+  const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ || 
+    process.argv.find(arg => arg.startsWith('--preferred-xcodeproj='))?.split('=')[1];
+  
+  const serverOptions: {
+    includeClean: boolean;
+    preferredScheme?: string;
+    preferredXcodeproj?: string;
+  } = { includeClean };
+  
+  if (preferredScheme) serverOptions.preferredScheme = preferredScheme;
+  if (preferredXcodeproj) serverOptions.preferredXcodeproj = preferredXcodeproj;
+  
+  const server = new XcodeMCPServer(serverOptions);
   
   // Check for port argument
   const portArg = process.argv.find(arg => arg.startsWith('--port='));

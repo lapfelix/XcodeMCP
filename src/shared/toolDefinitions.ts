@@ -7,8 +7,12 @@ export interface ToolDefinition {
 /**
  * Get all tool definitions shared between CLI and MCP
  */
-export function getToolDefinitions(options: { includeClean?: boolean } = { includeClean: true }): ToolDefinition[] {
-  const { includeClean = true } = options;
+export function getToolDefinitions(options: { 
+  includeClean?: boolean;
+  preferredScheme?: string;
+  preferredXcodeproj?: string;
+} = { includeClean: true }): ToolDefinition[] {
+  const { includeClean = true, preferredScheme, preferredXcodeproj } = options;
   const tools: ToolDefinition[] = [
     {
       name: 'xcode_open_project',
@@ -18,10 +22,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -32,10 +38,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -46,18 +54,25 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file to build (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file to build (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
           scheme: {
             type: 'string',
-            description: 'Name of the scheme to build',
+            description: preferredScheme 
+              ? `Name of the scheme to build - defaults to ${preferredScheme}`
+              : 'Name of the scheme to build',
           },
           destination: {
             type: 'string',
             description: 'Build destination (optional - uses active destination if not provided)',
           },
         },
-        required: ['xcodeproj', 'scheme'],
+        required: [
+          ...(!preferredXcodeproj ? ['xcodeproj'] : []),
+          ...(!preferredScheme ? ['scheme'] : [])
+        ],
       },
     },
     {
@@ -68,10 +83,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -82,14 +99,16 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
           scheme_name: {
             type: 'string',
             description: 'Name of the scheme to activate',
           },
         },
-        required: ['xcodeproj', 'scheme_name'],
+        required: preferredXcodeproj ? ['scheme_name'] : ['xcodeproj', 'scheme_name'],
       },
     },
     {
@@ -100,7 +119,9 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
           destination: {
             type: 'string',
@@ -134,7 +155,7 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
             description: 'Optional: Target name for the test target (alternative to test_target_identifier). Example: "TestAppTests".',
           },
         },
-        required: ['xcodeproj', 'destination'],
+        required: preferredXcodeproj ? ['destination'] : ['xcodeproj', 'destination'],
       },
     },
     {
@@ -145,11 +166,15 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
           scheme: {
             type: 'string',
-            description: 'Name of the scheme to run',
+            description: preferredScheme 
+              ? `Name of the scheme to run - defaults to ${preferredScheme}`
+              : 'Name of the scheme to run',
           },
           command_line_arguments: {
             type: 'array',
@@ -157,7 +182,10 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
             description: 'Additional command line arguments',
           },
         },
-        required: ['xcodeproj', 'scheme'],
+        required: [
+          ...(!preferredXcodeproj ? ['xcodeproj'] : []),
+          ...(!preferredScheme ? ['scheme'] : [])
+        ],
       },
     },
     {
@@ -168,18 +196,22 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
           scheme: {
             type: 'string',
-            description: 'Scheme name (optional)',
+            description: preferredScheme 
+              ? `Scheme name (optional) - defaults to ${preferredScheme}` 
+              : 'Scheme name (optional)',
           },
           skip_building: {
             type: 'boolean',
             description: 'Whether to skip building',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -190,10 +222,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -204,10 +238,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -218,10 +254,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -232,10 +270,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -246,10 +286,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     },
     {
@@ -491,10 +533,12 @@ export function getToolDefinitions(options: { includeClean?: boolean } = { inclu
         properties: {
           xcodeproj: {
             type: 'string',
-            description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
+            description: preferredXcodeproj 
+              ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
+              : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
         },
-        required: ['xcodeproj'],
+        required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     });
   }

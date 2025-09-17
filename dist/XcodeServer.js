@@ -15,8 +15,19 @@ export class XcodeServer {
     isValidated = false;
     canOperateInDegradedMode = false;
     includeClean;
+    preferredScheme;
+    preferredXcodeproj;
     constructor(options = {}) {
         this.includeClean = options.includeClean ?? true;
+        this.preferredScheme = options.preferredScheme;
+        this.preferredXcodeproj = options.preferredXcodeproj;
+        // Log preferred values if set
+        if (this.preferredScheme) {
+            Logger.info(`Using preferred scheme: ${this.preferredScheme}`);
+        }
+        if (this.preferredXcodeproj) {
+            Logger.info(`Using preferred xcodeproj: ${this.preferredXcodeproj}`);
+        }
         this.server = new Server({
             name: 'xcode-mcp-server',
             version: '1.0.0',
@@ -237,7 +248,12 @@ export class XcodeServer {
     }
     setupToolHandlers() {
         this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-            const toolDefinitions = getToolDefinitions({ includeClean: this.includeClean });
+            const toolOptions = { includeClean: this.includeClean };
+            if (this.preferredScheme)
+                toolOptions.preferredScheme = this.preferredScheme;
+            if (this.preferredXcodeproj)
+                toolOptions.preferredXcodeproj = this.preferredXcodeproj;
+            const toolDefinitions = getToolDefinitions(toolOptions);
             return {
                 tools: toolDefinitions.map(tool => ({
                     name: tool.name,
@@ -248,6 +264,13 @@ export class XcodeServer {
         });
         this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const { name, arguments: args = {} } = request.params;
+            // Apply preferred values if parameters not provided
+            if (!args.xcodeproj && this.preferredXcodeproj) {
+                args.xcodeproj = this.preferredXcodeproj;
+            }
+            if (!args.scheme && this.preferredScheme) {
+                args.scheme = this.preferredScheme;
+            }
             // Resolve relative paths to absolute paths
             if (args.xcodeproj && typeof args.xcodeproj === 'string') {
                 const { resolvedPath, error } = PathValidator.resolveAndValidateProjectPath(args.xcodeproj, 'xcodeproj');
@@ -276,7 +299,9 @@ export class XcodeServer {
                 switch (name) {
                     case 'xcode_open_project':
                         if (!args.xcodeproj) {
-                            throw new McpError(ErrorCode.InvalidParams, `Missing required parameter: xcodeproj\n\n💡 Expected: absolute path to .xcodeproj or .xcworkspace file`);
+                            throw new McpError(ErrorCode.InvalidParams, this.preferredXcodeproj
+                                ? `Missing required parameter: xcodeproj (no preferred value was applied)\n\n💡 Expected: absolute path to .xcodeproj or .xcworkspace file`
+                                : `Missing required parameter: xcodeproj\n\n💡 Expected: absolute path to .xcodeproj or .xcworkspace file`);
                         }
                         const result = await ProjectTools.openProject(args.xcodeproj);
                         if (result && 'content' in result && result.content?.[0] && 'text' in result.content[0]) {

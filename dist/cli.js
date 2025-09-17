@@ -113,12 +113,36 @@ async function main() {
         // Check for --no-clean argument early to configure both server and tools
         const noCleanArg = process.argv.includes('--no-clean');
         const includeClean = !noCleanArg;
-        const server = new XcodeServer({ includeClean });
+        // Parse preferred values from command-line or environment
+        const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME ||
+            process.argv.find(arg => arg.startsWith('--preferred-scheme='))?.split('=')[1];
+        const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ ||
+            process.argv.find(arg => arg.startsWith('--preferred-xcodeproj='))?.split('=')[1];
+        const serverOptions = { includeClean };
+        if (preferredScheme)
+            serverOptions.preferredScheme = preferredScheme;
+        if (preferredXcodeproj)
+            serverOptions.preferredXcodeproj = preferredXcodeproj;
+        const server = new XcodeServer(serverOptions);
         // Get tool definitions from shared source to ensure CLI is always in sync with MCP
-        const tools = getToolDefinitions({ includeClean });
-        const program = new Command('xcodecontrol')
-            .version(pkg.version)
-            .description(`Command-line interface for Xcode automation and control
+        const toolOptions = { includeClean };
+        if (preferredScheme)
+            toolOptions.preferredScheme = preferredScheme;
+        if (preferredXcodeproj)
+            toolOptions.preferredXcodeproj = preferredXcodeproj;
+        const tools = getToolDefinitions(toolOptions);
+        // Build description with preferred values if set
+        let description = `Command-line interface for Xcode automation and control`;
+        if (preferredScheme || preferredXcodeproj) {
+            description += '\n\n📌 Preferred Values:';
+            if (preferredScheme) {
+                description += `\n  • Scheme: ${preferredScheme}`;
+            }
+            if (preferredXcodeproj) {
+                description += `\n  • Project: ${preferredXcodeproj}`;
+            }
+        }
+        description += `
 
 📁 Command Categories:
   • Project Management  - Open/close projects, manage schemes and workspaces
@@ -135,11 +159,16 @@ async function main() {
 💡 Use 'xcodecontrol list-tools' to see all commands organized by category
 💡 Use 'xcodecontrol <command> --help' for detailed help on any command
 
-🚫 Use 'xcodecontrol --no-clean' to disable the clean tool for safety`)
+🚫 Use 'xcodecontrol --no-clean' to disable the clean tool for safety`;
+        const program = new Command('xcodecontrol')
+            .version(pkg.version)
+            .description(description)
             .option('--json', 'Output results in JSON format', false)
             .option('-v, --verbose', 'Enable verbose output (shows INFO logs)', false)
             .option('-q, --quiet', 'Suppress all logs except errors', false)
-            .option('--no-clean', 'Disable the clean tool', false);
+            .option('--no-clean', 'Disable the clean tool', false)
+            .option('--preferred-scheme <scheme>', 'Set a preferred scheme to use as default')
+            .option('--preferred-xcodeproj <path>', 'Set a preferred xcodeproj/xcworkspace to use as default');
         // Add global help command
         program
             .command('help')
