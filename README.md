@@ -79,6 +79,19 @@ claude mcp add-json XcodeMCP '{
 }'
 ```
 
+#### Without the clean build folder tool
+
+To add XcodeMCP to Claude Code using the command line:
+```bash
+claude mcp add-json XcodeMCP '{
+  "command": "npx",
+  "args": ["-y", "xcodemcp@latest", "--no-clean"],
+  "env": {
+    "LOG_LEVEL": "INFO"
+  }
+}'
+```
+
 ### Development Setup
 
 For local development:
