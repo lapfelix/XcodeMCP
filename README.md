@@ -92,6 +92,10 @@ claude mcp add-json XcodeMCP '{
 }'
 ```
 
+#### Troubleshooting
+
+If `/mcp` in Claude Code indicates the MCP failed, try running it from the project folder manually to see what the output is: `npx -y xcodemcp@latest`
+
 ### Development Setup
 
 For local development:
