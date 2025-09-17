@@ -52,10 +52,12 @@ jobs:
         mcp-publisher --version || echo "mcp-publisher installed"
     
     - name: Authenticate with MCP Registry
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Use GitHub token for authentication
-        # The publisher will use the GITHUB_TOKEN to authenticate
-        echo "Using GitHub token for authentication"
+        echo "Authenticating with MCP Registry using GitHub token..."
+        # Login using GitHub OAuth
+        mcp-publisher login github
     
     - name: Publish to MCP Registry
       env:
