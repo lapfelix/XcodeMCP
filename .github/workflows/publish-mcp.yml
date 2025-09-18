@@ -15,6 +15,9 @@ on:
 jobs:
   publish-mcp:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     
     steps:
     - name: Checkout code
@@ -52,20 +55,15 @@ jobs:
         mcp-publisher --version || echo "mcp-publisher installed"
     
     - name: Authenticate with MCP Registry
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        echo "Authenticating with MCP Registry using GitHub token..."
-        # Login using GitHub OAuth
-        mcp-publisher login github
+        echo "Using GitHub OIDC for MCP Registry authentication..."
+        # GitHub Actions OIDC authentication is automatic with proper permissions
     
     - name: Publish to MCP Registry
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         echo "Publishing server to MCP registry..."
         
-        # The mcp-publisher will handle GitHub OAuth using the GITHUB_TOKEN
+        # The mcp-publisher will handle GitHub OIDC authentication automatically
         if mcp-publisher publish; then
           echo "✅ Successfully published to MCP registry"
         else
