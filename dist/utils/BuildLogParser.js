@@ -254,32 +254,32 @@ export class BuildLogParser {
                 }
                 try {
                     const result = JSON.parse(stdout);
-                    const errors = (result.errors || []).map(error => {
-                        const fileName = error.documentURL ? error.documentURL.replace('file://', '') : 'Unknown file';
-                        const line = error.startingLineNumber;
-                        const column = error.startingColumnNumber;
-                        let location = fileName;
-                        if (line && line > 0) {
-                            location += `:${line}`;
-                            if (column && column > 0) {
-                                location += `:${column}`;
+                    const errors = [...new Set((result.errors || []).map(error => {
+                            const fileName = error.documentURL ? error.documentURL.replace('file://', '') : 'Unknown file';
+                            const line = error.startingLineNumber;
+                            const column = error.startingColumnNumber;
+                            let location = fileName;
+                            if (line && line > 0) {
+                                location += `:${line}`;
+                                if (column && column > 0) {
+                                    location += `:${column}`;
+                                }
                             }
-                        }
-                        return `${location}: ${error.title}`;
-                    });
-                    const warnings = (result.warnings || []).map(warning => {
-                        const fileName = warning.documentURL ? warning.documentURL.replace('file://', '') : 'Unknown file';
-                        const line = warning.startingLineNumber;
-                        const column = warning.startingColumnNumber;
-                        let location = fileName;
-                        if (line && line > 0) {
-                            location += `:${line}`;
-                            if (column && column > 0) {
-                                location += `:${column}`;
+                            return `${location}: ${error.title}`;
+                        }))];
+                    const warnings = [...new Set((result.warnings || []).map(warning => {
+                            const fileName = warning.documentURL ? warning.documentURL.replace('file://', '') : 'Unknown file';
+                            const line = warning.startingLineNumber;
+                            const column = warning.startingColumnNumber;
+                            let location = fileName;
+                            if (line && line > 0) {
+                                location += `:${line}`;
+                                if (column && column > 0) {
+                                    location += `:${column}`;
+                                }
                             }
-                        }
-                        return `${location}: ${warning.title}`;
-                    });
+                            return `${location}: ${warning.title}`;
+                        }))];
                     const buildResult = {
                         errors,
                         warnings

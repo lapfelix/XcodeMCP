@@ -302,7 +302,7 @@ export class BuildLogParser {
         try {
           const result: XCLogParserResult = JSON.parse(stdout);
           
-          const errors = (result.errors || []).map(error => {
+          const errors = [...new Set((result.errors || []).map(error => {
             const fileName = error.documentURL ? error.documentURL.replace('file://', '') : 'Unknown file';
             const line = error.startingLineNumber;
             const column = error.startingColumnNumber;
@@ -316,9 +316,9 @@ export class BuildLogParser {
             }
             
             return `${location}: ${error.title}`;
-          });
+          }))];
           
-          const warnings = (result.warnings || []).map(warning => {
+          const warnings = [...new Set((result.warnings || []).map(warning => {
             const fileName = warning.documentURL ? warning.documentURL.replace('file://', '') : 'Unknown file';
             const line = warning.startingLineNumber;
             const column = warning.startingColumnNumber;
@@ -332,7 +332,7 @@ export class BuildLogParser {
             }
             
             return `${location}: ${warning.title}`;
-          });
+          }))];
           
           const buildResult: ParsedBuildResults = {
             errors,
