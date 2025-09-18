@@ -1,5 +1,10 @@
 name: Publish to MCP Registry
 
+# NOTE: This workflow currently fails because GitHub Actions OIDC authentication
+# is not yet implemented for the MCP registry. Manual publishing is required.
+# See: https://github.com/modelcontextprotocol/registry/issues/271
+# This workflow will be updated when OIDC support is available.
+
 on:
   # Manual trigger
   workflow_dispatch:
@@ -56,9 +61,11 @@ jobs:
     
     - name: Authenticate with MCP Registry
       run: |
-        echo "Authenticating with MCP Registry using GitHub OIDC..."
-        # Use GitHub OIDC for authentication
-        mcp-publisher login github
+        echo "⚠️ MCP Registry GitHub Actions OIDC is not yet implemented"
+        echo "See: https://github.com/modelcontextprotocol/registry/issues/271"
+        echo "Manual publishing is required for now"
+        echo "This workflow will be updated when OIDC is available"
+        exit 1
     
     - name: Publish to MCP Registry
       run: |
@@ -89,12 +96,15 @@ jobs:
     - name: Failure notification
       if: failure()
       run: |
-        echo "## ❌ MCP Registry Publishing Failed" >> $GITHUB_STEP_SUMMARY
+        echo "## ⚠️ MCP Registry Publishing Not Available" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "The server could not be published to the MCP registry." >> $GITHUB_STEP_SUMMARY
+        echo "**GitHub Actions OIDC authentication is not yet implemented for the MCP registry.**" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Common issues:" >> $GITHUB_STEP_SUMMARY
-        echo "- Authentication failed (check GitHub token permissions)" >> $GITHUB_STEP_SUMMARY
-        echo "- server.json validation failed" >> $GITHUB_STEP_SUMMARY
-        echo "- Package validation failed (mcpName mismatch)" >> $GITHUB_STEP_SUMMARY
-        echo "- Network connectivity issues" >> $GITHUB_STEP_SUMMARY
+        echo "📍 **Current Status:** [GitHub Issue #271](https://github.com/modelcontextprotocol/registry/issues/271)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🔧 **Manual Publishing Required:**" >> $GITHUB_STEP_SUMMARY
+        echo "1. Install: \`brew install xclogparser && npm install -g xcodemcp\`" >> $GITHUB_STEP_SUMMARY
+        echo "2. Download mcp-publisher from [releases](https://github.com/modelcontextprotocol/registry/releases)" >> $GITHUB_STEP_SUMMARY
+        echo "3. Run: \`mcp-publisher login github && mcp-publisher publish\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **npm Publishing:** Your package was published to npm successfully!" >> $GITHUB_STEP_SUMMARY
