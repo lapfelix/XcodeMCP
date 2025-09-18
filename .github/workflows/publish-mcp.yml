@@ -56,8 +56,9 @@ jobs:
     
     - name: Authenticate with MCP Registry
       run: |
-        echo "Using GitHub OIDC for MCP Registry authentication..."
-        # GitHub Actions OIDC authentication is automatic with proper permissions
+        echo "Authenticating with MCP Registry using GitHub OIDC..."
+        # Use GitHub OIDC for authentication
+        mcp-publisher login github
     
     - name: Publish to MCP Registry
       run: |
