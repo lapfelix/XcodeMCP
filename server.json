@@ -7,13 +7,13 @@
     "url": "https://github.com/lapfelix/XcodeMCP",
     "source": "github"
   },
-  "version": "2.1.3",
+  "version": "2.1.4",
   "packages": [
     {
       "registry_type": "npm",
       "registry_base_url": "https://registry.npmjs.org",
       "identifier": "xcodemcp",
-      "version": "2.1.3",
+      "version": "2.1.4",
       "transport": {
         "type": "stdio"
       },
