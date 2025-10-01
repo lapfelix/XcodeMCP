@@ -59,7 +59,6 @@ Add to your MCP configuration:
       "command": "npx",
       "args": ["-y", "xcodemcp@latest"],
       "env": {
-        "LOG_LEVEL": "INFO"
       }
     }
   }
@@ -74,7 +73,6 @@ claude mcp add-json XcodeMCP '{
   "command": "npx",
   "args": ["-y", "xcodemcp@latest"],
   "env": {
-    "LOG_LEVEL": "INFO"
   }
 }'
 ```
@@ -87,7 +85,6 @@ claude mcp add-json XcodeMCP '{
   "command": "npx",
   "args": ["-y", "xcodemcp@latest", "--no-clean"],
   "env": {
-    "LOG_LEVEL": "INFO"
   }
 }'
 ```
@@ -101,7 +98,6 @@ claude mcp add-json XcodeMCP '{
   "command": "npx",
   "args": ["-y", "xcodemcp@latest"],
   "env": {
-    "LOG_LEVEL": "INFO",
     "XCODE_MCP_PREFERRED_SCHEME": "MyApp",
     "XCODE_MCP_PREFERRED_XCODEPROJ": "MyApp.xcodeproj"
   }
