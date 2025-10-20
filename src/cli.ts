@@ -131,17 +131,17 @@ async function main(): Promise<void> {
     const includeClean = !noCleanArg;
     
     // Parse preferred values from command-line or environment
-    const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME || 
+    const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME ||
       process.argv.find(arg => arg.startsWith('--preferred-scheme='))?.split('=')[1];
-    const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ || 
+    const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ ||
       process.argv.find(arg => arg.startsWith('--preferred-xcodeproj='))?.split('=')[1];
-    
+
     const serverOptions: {
       includeClean: boolean;
       preferredScheme?: string;
       preferredXcodeproj?: string;
     } = { includeClean };
-    
+
     if (preferredScheme) serverOptions.preferredScheme = preferredScheme;
     if (preferredXcodeproj) serverOptions.preferredXcodeproj = preferredXcodeproj;
     

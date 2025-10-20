@@ -7,12 +7,13 @@ export interface ToolDefinition {
 /**
  * Get all tool definitions shared between CLI and MCP
  */
-export function getToolDefinitions(options: { 
+export function getToolDefinitions(options: {
   includeClean?: boolean;
   preferredScheme?: string;
   preferredXcodeproj?: string;
+  allowedTools?: string[];
 } = { includeClean: true }): ToolDefinition[] {
-  const { includeClean = true, preferredScheme, preferredXcodeproj } = options;
+  const { includeClean = true, preferredScheme, preferredXcodeproj, allowedTools } = options;
   const tools: ToolDefinition[] = [
     {
       name: 'xcode_open_project',
@@ -533,7 +534,7 @@ export function getToolDefinitions(options: {
         properties: {
           xcodeproj: {
             type: 'string',
-            description: preferredXcodeproj 
+            description: preferredXcodeproj
               ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
               : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
@@ -541,6 +542,11 @@ export function getToolDefinitions(options: {
         required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     });
+  }
+
+  // Filter tools based on allowedTools whitelist
+  if (allowedTools && allowedTools.length > 0) {
+    return tools.filter(tool => allowedTools.includes(tool.name));
   }
 
   return tools;

@@ -89,6 +89,29 @@ claude mcp add-json XcodeMCP '{
 }'
 ```
 
+#### With Tool Whitelist (Reduce Token Usage)
+
+To reduce context/token usage by only exposing specific tools to the MCP:
+```bash
+claude mcp add-json XcodeMCP '{
+  "command": "npx",
+  "args": ["-y", "xcodemcp@latest", "--allowed-tools=xcode_build,xcode_test,xcode_get_schemes"],
+  "env": {
+  }
+}'
+```
+
+This limits the MCP to only expose the specified tools, reducing the context sent to the AI model. You can combine this with other options:
+```bash
+claude mcp add-json XcodeMCP '{
+  "command": "npx",
+  "args": ["-y", "xcodemcp@latest", "--allowed-tools=xcode_build,xcode_test", "--no-clean"],
+  "env": {
+    "XCODE_MCP_PREFERRED_SCHEME": "MyApp"
+  }
+}'
+```
+
 #### Using Preferred Values for Single Project Workflows
 
 For projects where you're working with a single xcodeproj and scheme, you can configure preferred values to make tool parameters optional:

@@ -10,10 +10,12 @@ export declare class XcodeServer {
     private includeClean;
     private preferredScheme;
     private preferredXcodeproj;
+    private allowedTools;
     constructor(options?: {
         includeClean?: boolean;
         preferredScheme?: string;
         preferredXcodeproj?: string;
+        allowedTools?: string[];
     });
     /**
      * Validates the environment and sets up the server accordingly

@@ -17,16 +17,21 @@ export class XcodeServer {
     includeClean;
     preferredScheme;
     preferredXcodeproj;
+    allowedTools;
     constructor(options = {}) {
         this.includeClean = options.includeClean ?? true;
         this.preferredScheme = options.preferredScheme;
         this.preferredXcodeproj = options.preferredXcodeproj;
+        this.allowedTools = options.allowedTools;
         // Log preferred values if set
         if (this.preferredScheme) {
             Logger.info(`Using preferred scheme: ${this.preferredScheme}`);
         }
         if (this.preferredXcodeproj) {
             Logger.info(`Using preferred xcodeproj: ${this.preferredXcodeproj}`);
+        }
+        if (this.allowedTools) {
+            Logger.info(`Tool whitelist enabled: ${this.allowedTools.join(', ')}`);
         }
         this.server = new Server({
             name: 'xcode-mcp-server',
@@ -253,6 +258,8 @@ export class XcodeServer {
                 toolOptions.preferredScheme = this.preferredScheme;
             if (this.preferredXcodeproj)
                 toolOptions.preferredXcodeproj = this.preferredXcodeproj;
+            if (this.allowedTools)
+                toolOptions.allowedTools = this.allowedTools;
             const toolDefinitions = getToolDefinitions(toolOptions);
             return {
                 tools: toolDefinitions.map(tool => ({
@@ -284,6 +291,10 @@ export class XcodeServer {
                 if (!path.default.isAbsolute(args.filePath)) {
                     args.filePath = path.default.resolve(process.cwd(), args.filePath);
                 }
+            }
+            // Check if tool is allowed by whitelist
+            if (this.allowedTools && this.allowedTools.length > 0 && !this.allowedTools.includes(name)) {
+                throw new McpError(ErrorCode.MethodNotFound, `Tool '${name}' is not in the allowed tools list. Allowed tools: ${this.allowedTools.join(', ')}`);
             }
             try {
                 // Handle health check tool first (no environment validation needed)

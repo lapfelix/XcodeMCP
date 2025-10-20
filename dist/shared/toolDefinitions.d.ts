@@ -10,5 +10,6 @@ export declare function getToolDefinitions(options?: {
     includeClean?: boolean;
     preferredScheme?: string;
     preferredXcodeproj?: string;
+    allowedTools?: string[];
 }): ToolDefinition[];
 //# sourceMappingURL=toolDefinitions.d.ts.map

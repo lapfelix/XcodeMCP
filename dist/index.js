@@ -190,11 +190,16 @@ if (process.env.NODE_ENV !== 'test') {
         process.argv.find(arg => arg.startsWith('--preferred-scheme='))?.split('=')[1];
     const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ ||
         process.argv.find(arg => arg.startsWith('--preferred-xcodeproj='))?.split('=')[1];
+    // Check for allowed-tools argument
+    const allowedToolsArg = process.argv.find(arg => arg.startsWith('--allowed-tools='))?.split('=')[1];
+    const allowedTools = allowedToolsArg ? allowedToolsArg.split(',').map(tool => tool.trim()) : undefined;
     const serverOptions = { includeClean };
     if (preferredScheme)
         serverOptions.preferredScheme = preferredScheme;
     if (preferredXcodeproj)
         serverOptions.preferredXcodeproj = preferredXcodeproj;
+    if (allowedTools)
+        serverOptions.allowedTools = allowedTools;
     const server = new XcodeMCPServer(serverOptions);
     // Check for port argument
     const portArg = process.argv.find(arg => arg.startsWith('--port='));
