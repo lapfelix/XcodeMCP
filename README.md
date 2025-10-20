@@ -101,16 +101,19 @@ claude mcp add-json XcodeMCP '{
 }'
 ```
 
-This limits the MCP to only expose the specified tools, reducing the context sent to the AI model. You can combine this with other options:
+This limits the MCP to only expose the specified tools, reducing the context sent to the AI model. You can combine this with preferred values for even more streamlined usage:
 ```bash
 claude mcp add-json XcodeMCP '{
   "command": "npx",
-  "args": ["-y", "xcodemcp@latest", "--allowed-tools=xcode_build,xcode_test", "--no-clean"],
+  "args": ["-y", "xcodemcp@latest", "--allowed-tools=xcode_build,xcode_test"],
   "env": {
-    "XCODE_MCP_PREFERRED_SCHEME": "MyApp"
+    "XCODE_MCP_PREFERRED_SCHEME": "MyApp",
+    "XCODE_MCP_PREFERRED_XCODEPROJ": "MyApp.xcodeproj"
   }
 }'
 ```
+
+**Note:** If using `--allowed-tools`, you don't need `--no-clean` - simply exclude `xcode_clean` from your allowed tools list.
 
 #### Using Preferred Values for Single Project Workflows
 
