@@ -8,7 +8,14 @@ const spawn = mockSpawn; // Add alias for tests
 
 // Mock the child_process module
 jest.mock('child_process', () => ({
-  spawn: mockSpawn
+  spawn: mockSpawn,
+  execFile: jest.fn((...args) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : undefined;
+    if (callback) {
+      callback(null, '', '');
+    }
+    return { pid: 123 };
+  }),
 }));
 
 // Mock the MCP SDK
@@ -281,14 +288,15 @@ describeIfXcode('XcodeMCPServer', () => {
       const server = new XcodeMCPServer();
       
       // Test multiple methods to ensure they generate valid JS
+      const fakeProject = '/Users/test/TestApp.xcodeproj';
       const methods = [
-        () => server.build(),
-        () => server.clean(),
-        () => server.stop(),
-        () => server.getSchemes(),
-        () => server.getRunDestinations(),
-        () => server.getWorkspaceInfo(),
-        () => server.getProjects()
+        () => server.build(fakeProject, 'Debug', null, 'Script generation test'),
+        () => server.clean(fakeProject),
+        () => server.stop(fakeProject),
+        () => server.getSchemes(fakeProject),
+        () => server.getRunDestinations(fakeProject),
+        () => server.getWorkspaceInfo(fakeProject),
+        () => server.getProjects(fakeProject)
       ];
       
       for (const method of methods) {

@@ -127,3 +127,5 @@ export class ErrorHelper {
     return null;
   }
 }
+
+export default ErrorHelper;

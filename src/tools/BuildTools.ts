@@ -1,28 +1,95 @@
-import { stat } from 'fs/promises';
-import { readdir } from 'fs/promises';
-import { join } from 'path';
+import { stat, readdir, rm, mkdir, readFile, writeFile } from 'fs/promises';
+import { basename, dirname, join } from 'path';
+import { spawn, execFile } from 'child_process';
+import { tmpdir, homedir } from 'os';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { JXAExecutor } from '../utils/JXAExecutor.js';
 import { BuildLogParser } from '../utils/BuildLogParser.js';
-import { PathValidator } from '../utils/PathValidator.js';
-import { ErrorHelper } from '../utils/ErrorHelper.js';
+import PathValidator from '../utils/PathValidator.js';
+import ErrorHelper from '../utils/ErrorHelper.js';
 import { ParameterNormalizer } from '../utils/ParameterNormalizer.js';
-import { Logger } from '../utils/Logger.js';
+import Logger from '../utils/Logger.js';
 import { XCResultParser } from '../utils/XCResultParser.js';
 import { getWorkspaceByPathScript } from '../utils/JXAHelpers.js';
-import type { McpResult, OpenProjectCallback } from '../types/index.js';
+import type { BuildLogInfo, McpResult, OpenProjectCallback, ParsedBuildResults } from '../types/index.js';
+import BuildLogStore, { BuildLogRecord } from '../utils/BuildLogStore.js';
+import LockManager from '../utils/LockManager.js';
+
+const FAILURE_STATUS_TOKENS = ['fail', 'error', 'cancel', 'terminate', 'abort'];
 
 export class BuildTools {
+  private static pendingTestOptions: {
+    testPlanPath?: string;
+    selectedTests?: string[];
+    selectedTestClasses?: string[];
+    testTargetIdentifier?: string;
+    testTargetName?: string;
+    schemeName?: string;
+    deviceType?: string;
+    osVersion?: string;
+  } | null = null;
+
+  public static setPendingTestOptions(options: {
+    testPlanPath?: string;
+    selectedTests?: string[];
+    selectedTestClasses?: string[];
+    testTargetIdentifier?: string;
+    testTargetName?: string;
+    schemeName?: string;
+    deviceType?: string;
+    osVersion?: string;
+  }): void {
+    Logger.debug(`Pending test options set: ${JSON.stringify(options)}`);
+    this.pendingTestOptions = options;
+  }
+
   public static async build(
-    projectPath: string, 
-    schemeName: string, 
-    destination: string | null = null, 
+    projectPath: string,
+    schemeName: string,
+    reason: string,
+    destination: string | null = null,
     openProject: OpenProjectCallback
   ): Promise<McpResult> {
     const validationError = PathValidator.validateProjectPath(projectPath);
     if (validationError) return validationError;
 
     await openProject(projectPath);
+
+    let logRecord: BuildLogRecord | null = null;
+    let lockFooterText: string | null = null;
+    let autoReleaseNote: string | null = null;
+    const applyLockMessaging = (message: string): string => {
+      if (autoReleaseNote) {
+        const note = `🔓 Lock automatically released: ${autoReleaseNote}\nNo manual release command is required for this attempt.`;
+        return `${message}\n\n${note}`;
+      }
+      return LockManager.appendFooter(message, lockFooterText);
+    };
+    const attachLogHint = (message: string): string => {
+      if (!logRecord) return applyLockMessaging(message);
+      const hintLines = [
+        '🪵 Build Log Metadata',
+        `  • Log ID: ${logRecord.id}`,
+        `  • Path: ${logRecord.logPath}`,
+      ];
+      if (logRecord.schemeName) {
+        hintLines.splice(1, 0, `  • Scheme: ${logRecord.schemeName}`);
+      }
+      if (logRecord.destination) {
+        hintLines.splice(hintLines.length - 1, 0, `  • Destination: ${logRecord.destination}`);
+      }
+      hintLines.push(`  • View: xcodecontrol view-build-log --log-id ${logRecord.id}`);
+      return applyLockMessaging(`${message}\n\n${hintLines.join('\n')}`);
+    };
+    const finalizeLogStatus = (status: 'active' | 'completed' | 'failed', buildStatus?: string | null) => {
+      const extras =
+        buildStatus === undefined
+          ? undefined
+          : {
+              buildStatus,
+            };
+      BuildLogStore.updateStatus(logRecord?.id, status, extras);
+    };
 
     // Normalize the scheme name for better matching
     const normalizedSchemeName = ParameterNormalizer.normalizeSchemeName(schemeName);
@@ -87,8 +154,8 @@ export class BuildTools {
       }
 
     if (destination) {
-      // Normalize the destination name for better matching
-      const normalizedDestination = ParameterNormalizer.normalizeDestinationName(destination);
+      // Pre-compute destination name candidates for flexible matching
+      const destinationCandidates = ParameterNormalizer.getDestinationNameCandidates(destination);
       
       const setDestinationScript = `
         (function() {
@@ -96,14 +163,23 @@ export class BuildTools {
           
           const destinations = workspace.runDestinations();
           const destinationNames = destinations.map(dest => dest.name());
+          const candidateNames = ${JSON.stringify(destinationCandidates)};
+          
+          const findMatch = (names) => {
+            if (!names || !names.length) {
+              return null;
+            }
+            for (const name of names) {
+              const match = destinations.find(dest => dest.name() === name);
+              if (match) {
+                return match;
+              }
+            }
+            return null;
+          };
           
           // Try exact match first
-          let targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(normalizedDestination)});
-          
-          // If not found, try original name
-          if (!targetDestination) {
-            targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(destination)});
-          }
+          let targetDestination = findMatch(candidateNames);
           
           if (!targetDestination) {
             throw new Error('Destination not found. Available: ' + JSON.stringify(destinationNames));
@@ -160,6 +236,30 @@ export class BuildTools {
       }
     }
 
+    const { footerText: buildLockFooter } = await LockManager.acquireLock(projectPath, reason, 'xcode_build');
+    lockFooterText = buildLockFooter;
+    let lockReleased = false;
+    const releaseLockNow = async (): Promise<void> => {
+      if (lockReleased) {
+        return;
+      }
+      try {
+        await LockManager.releaseLock(projectPath);
+      } catch (error) {
+        Logger.warn(
+          `Failed to release build lock for ${projectPath}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      } finally {
+        lockReleased = true;
+      }
+    };
+    const markAutoRelease = async (reasonText: string): Promise<void> => {
+      autoReleaseNote = reasonText;
+      await releaseLockNow();
+    };
+
     const buildScript = `
       (function() {
         ${getWorkspaceByPathScript(projectPath)}
@@ -180,16 +280,22 @@ export class BuildTools {
     } catch (error) {
       const enhancedError = ErrorHelper.parseCommonErrors(error as Error);
       if (enhancedError) {
-        return { content: [{ type: 'text', text: enhancedError }] };
+        await markAutoRelease('Failed to start the build in Xcode');
+        return {
+          content: [{ type: 'text', text: applyLockMessaging(enhancedError) }],
+        };
       }
       const errorMessage = error instanceof Error ? error.message : String(error);
-      return { content: [{ type: 'text', text: `Failed to start build: ${errorMessage}` }] };
+      await markAutoRelease('Failed to start the build in Xcode');
+      return {
+        content: [{ type: 'text', text: applyLockMessaging(`Failed to start build: ${errorMessage}`) }],
+      };
     }
 
     Logger.info('Waiting for new build log to appear after build start...');
     
     let attempts = 0;
-    let newLog = null;
+    let newLog: BuildLogInfo | null = null;
     const initialWaitAttempts = 3600; // 1 hour max to wait for build log
 
     while (attempts < initialWaitAttempts) {
@@ -214,7 +320,31 @@ export class BuildTools {
     }
 
     if (!newLog) {
-      return { content: [{ type: 'text', text: ErrorHelper.createErrorWithGuidance(`Build started but no new build log appeared within ${initialWaitAttempts} seconds`, ErrorHelper.getBuildLogNotFoundGuidance()) }] };
+      await markAutoRelease('Build log never appeared');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: applyLockMessaging(
+              ErrorHelper.createErrorWithGuidance(
+                `Build started but no new build log appeared within ${initialWaitAttempts} seconds`,
+                ErrorHelper.getBuildLogNotFoundGuidance(),
+              ),
+            ),
+          },
+        ],
+      };
+    }
+
+    if (!logRecord) {
+      logRecord = BuildLogStore.registerLog({
+        projectPath,
+        logPath: newLog.path,
+        schemeName,
+        destination,
+        action: 'build',
+        logKind: 'build',
+      });
     }
 
     Logger.info(`Monitoring build completion for log: ${newLog.path}`);
@@ -262,10 +392,31 @@ export class BuildTools {
     }
 
     if (attempts >= maxAttempts) {
-      return { content: [{ type: 'text', text: `Build timed out after ${maxAttempts} seconds` }] };
+      finalizeLogStatus('failed', 'timeout');
+      await markAutoRelease('Build timed out');
+      return {
+        content: [{ type: 'text', text: attachLogHint(`Build timed out after ${maxAttempts} seconds`) }],
+      };
     }
     
-    const results = await BuildLogParser.parseBuildLog(newLog.path);
+    const results = await BuildLogParser.parseBuildLog(newLog.path, 0, 6, { timeoutMs: 45000 });
+
+    const normalizedStatus = results.buildStatus ? results.buildStatus.toLowerCase() : null;
+    const statusIndicatesFailure = normalizedStatus
+      ? normalizedStatus !== 'stopped' &&
+        normalizedStatus !== 'interrupted' &&
+        FAILURE_STATUS_TOKENS.some(token => normalizedStatus.includes(token))
+      : false;
+    const summaryIndicatesFailure = typeof results.errorCount === 'number' && results.errorCount > 0;
+
+    if (results.errors.length === 0 && (statusIndicatesFailure || summaryIndicatesFailure)) {
+      const descriptor = results.buildStatus
+        ? `Xcode reported build status '${results.buildStatus}'`
+        : 'Xcode reported build errors in the log summary';
+      results.errors = [
+        `${descriptor} for log ${newLog.path}. Open the log in Xcode for full details.`,
+      ];
+    }
     
     let message = '';
     const schemeInfo = schemeName ? ` for scheme '${schemeName}'` : '';
@@ -276,7 +427,9 @@ export class BuildTools {
     // Handle stopped/interrupted builds
     if (results.buildStatus === 'stopped') {
       message = `⏹️ BUILD INTERRUPTED${schemeInfo}${destInfo}\n\nThe build was stopped or interrupted before completion.\n\n💡 This may happen when:\n  • The build was cancelled manually\n  • Xcode was closed during the build\n  • System resources were exhausted\n\nTry running the build again to complete it.`;
-      return { content: [{ type: 'text', text: message }] };
+      finalizeLogStatus('failed', results.buildStatus);
+      await markAutoRelease('Build was interrupted');
+      return { content: [{ type: 'text', text: attachLogHint(message) }] };
     }
     
     if (results.errors.length > 0) {
@@ -285,9 +438,11 @@ export class BuildTools {
         message += `  • ${error}\n`;
         Logger.error('Build error:', error);
       });
+      finalizeLogStatus('failed', results.buildStatus ?? 'failed');
+      await markAutoRelease('Build failed with errors');
       throw new McpError(
         ErrorCode.InternalError,
-        message
+        attachLogHint(message)
       );
     } else if (results.warnings.length > 0) {
       message = `⚠️ BUILD COMPLETED WITH WARNINGS${schemeInfo}${destInfo} (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
@@ -299,7 +454,8 @@ export class BuildTools {
       message = `✅ BUILD SUCCESSFUL${schemeInfo}${destInfo}`;
     }
 
-    return { content: [{ type: 'text', text: message }] };
+    finalizeLogStatus('completed', results.buildStatus ?? null);
+    return { content: [{ type: 'text', text: attachLogHint(message) }] };
   }
 
   public static async clean(projectPath: string, openProject: OpenProjectCallback): Promise<McpResult> {
@@ -330,646 +486,497 @@ export class BuildTools {
   }
 
   public static async test(
-    projectPath: string, 
-    destination: string,
-    commandLineArguments: string[] = [], 
-    openProject: OpenProjectCallback,
+    projectPath: string,
+    destination: string | null,
+    commandLineArguments: string[] = [],
+    _openProject: OpenProjectCallback,
     options?: {
       testPlanPath?: string;
       selectedTests?: string[];
       selectedTestClasses?: string[];
       testTargetIdentifier?: string;
       testTargetName?: string;
+      schemeName?: string;
+      deviceType?: string;
+      osVersion?: string;
     }
   ): Promise<McpResult> {
+    if ((!options || Object.keys(options).length === 0) && this.pendingTestOptions) {
+      Logger.debug(`Using pending test options fallback: ${JSON.stringify(this.pendingTestOptions)}`);
+      options = this.pendingTestOptions;
+      this.pendingTestOptions = null;
+    } else {
+      this.pendingTestOptions = null;
+    }
+
     const validationError = PathValidator.validateProjectPath(projectPath);
     if (validationError) return validationError;
 
-    await openProject(projectPath);
+    const requestedScheme = options?.schemeName;
+    if (!requestedScheme || requestedScheme.trim().length === 0) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Error: scheme parameter is required when running tests with xcodebuild.\n\n💡 Pass --scheme or set XCODE_MCP_PREFERRED_SCHEME.`
+        }]
+      };
+    }
 
-    // Set the destination for testing
-    {
-      // Normalize the destination name for better matching
-      const normalizedDestination = ParameterNormalizer.normalizeDestinationName(destination);
-      
-      const setDestinationScript = `
-        (function() {
-          ${getWorkspaceByPathScript(projectPath)}
-          
-          const destinations = workspace.runDestinations();
-          const destinationNames = destinations.map(dest => dest.name());
-          
-          // Try exact match first
-          let targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(normalizedDestination)});
-          
-          // If not found, try original name
-          if (!targetDestination) {
-            targetDestination = destinations.find(dest => dest.name() === ${JSON.stringify(destination)});
-          }
-          
-          if (!targetDestination) {
-            throw new Error('Destination not found. Available: ' + JSON.stringify(destinationNames));
-          }
-          
-          workspace.activeRunDestination = targetDestination;
-          return 'Destination set to ' + targetDestination.name();
-        })()
-      `;
-      
-      try {
-        await JXAExecutor.execute(setDestinationScript);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        if (errorMessage.includes('Destination not found')) {
-          // Extract available destinations from error message
-          try {
-            const availableMatch = errorMessage.match(/Available: (\[.*\])/);
-            if (availableMatch) {
-              const availableDestinations = JSON.parse(availableMatch[1]!);
-              const bestMatch = ParameterNormalizer.findBestMatch(destination, availableDestinations);
-              
-              let message = `❌ Destination '${destination}' not found\n\nAvailable destinations:\n`;
-              availableDestinations.forEach((dest: string) => {
-                if (dest === bestMatch) {
-                  message += `  • ${dest} ← Did you mean this?\n`;
-                } else {
-                  message += `  • ${dest}\n`;
-                }
-              });
-              
-              return { content: [{ type: 'text', text: message }] };
-            }
-          } catch {
-            // Fall through to generic error
-          }
-        }
-        
-        return { content: [{ type: 'text', text: `Failed to set destination '${destination}': ${errorMessage}` }] };
+    const requestedDeviceType = options?.deviceType ? options.deviceType.trim() : '';
+    const requestedOsVersion = options?.osVersion ? options.osVersion.trim() : '';
+
+    let destinationArgs: string[] | null = null;
+    let destinationLabel = destination ?? '';
+
+    if (requestedDeviceType) {
+      const deviceSelection = await this._buildDestinationArgsForDevice(requestedDeviceType, requestedOsVersion || null);
+      if (!deviceSelection) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Error: Unable to find a simulator for device '${requestedDeviceType}'${requestedOsVersion ? ` with OS ${requestedOsVersion}` : ''}.\n\n💡 Open Simulator.app to download the desired runtime, or supply an explicit destination string.`
+          }]
+        };
+      }
+      destinationArgs = deviceSelection.args;
+      destinationLabel = deviceSelection.label;
+    } else if (destination && destination.trim().length > 0) {
+      destinationArgs = await this._buildDestinationArgs(destination);
+      if (!destinationArgs) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Error: Could not determine destination from '${destination}'.\n\n💡 Provide a full xcodebuild destination string (e.g., platform=iOS Simulator,name iPhone 16) or a recognizable simulator name.`
+          }]
+        };
+      }
+      if (destinationArgs.length > 1) {
+        destinationLabel = destinationArgs[1] ?? destinationArgs[0] ?? (destination ?? 'unspecified destination');
+      } else {
+        destinationLabel = destination ?? (destinationArgs[0] ?? 'unspecified destination');
+      }
+    } else {
+      return {
+        content: [{
+          type: 'text',
+          text: 'Error: destination or device_type is required.\n\nSupply an explicit destination string or provide device_type (iphone, ipad, mac, etc.) and os_version.'
+        }]
+      };
+    }
+
+    if (!destinationArgs) {
+      return {
+        content: [{ type: 'text', text: 'Error: Unable to compute a destination for the requested device.' }],
+      };
+    }
+
+    const finalDestinationArgs = destinationArgs;
+
+    let buildContainerPath = projectPath;
+    let projectFlag: '-workspace' | '-project' | null = null;
+
+    if (projectPath.endsWith('.xcworkspace')) {
+      projectFlag = '-workspace';
+    } else if (projectPath.endsWith('.xcodeproj')) {
+      const workspaceCandidate = join(dirname(projectPath), `${basename(projectPath, '.xcodeproj')}.xcworkspace`);
+      if (await this._pathExists(workspaceCandidate)) {
+        projectFlag = '-workspace';
+        buildContainerPath = workspaceCandidate;
+        Logger.info(`Detected workspace at ${workspaceCandidate} – using it for xcodebuild to ensure shared schemes load correctly`);
+      } else {
+        projectFlag = '-project';
       }
     }
 
-    // Handle test plan modification if selective tests are requested
-    let originalTestPlan: string | null = null;
-    let shouldRestoreTestPlan = false;
-    
-    if (options?.testPlanPath && (options?.selectedTests?.length || options?.selectedTestClasses?.length)) {
-      if (!options.testTargetIdentifier && !options.testTargetName) {
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: 'Error: either test_target_identifier or test_target_name is required when using test filtering' 
-          }] 
-        };
-      }
-
-      // If target name is provided but no identifier, look up the identifier
-      let targetIdentifier = options.testTargetIdentifier;
-      let targetName = options.testTargetName;
-      
-      if (options.testTargetName && !options.testTargetIdentifier) {
-        try {
-          const { ProjectTools } = await import('./ProjectTools.js');
-          const targetInfo = await ProjectTools.getTestTargets(projectPath);
-          
-          // Parse the target info to find the identifier
-          const targetText = targetInfo.content?.[0]?.type === 'text' ? targetInfo.content[0].text : '';
-          const namePattern = new RegExp(`\\*\\*${options.testTargetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*\\s*\\n\\s*•\\s*Identifier:\\s*([A-F0-9]{24})`, 'i');
-          const match = targetText.match(namePattern);
-          
-          if (match && match[1]) {
-            targetIdentifier = match[1];
-            targetName = options.testTargetName;
-          } else {
-            return { 
-              content: [{ 
-                type: 'text', 
-                text: `Error: Test target '${options.testTargetName}' not found. Use 'xcode_get_test_targets' to see available targets.` 
-              }] 
-            };
-          }
-        } catch (lookupError) {
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: `Error: Failed to lookup test target '${options.testTargetName}': ${lookupError instanceof Error ? lookupError.message : String(lookupError)}` 
-            }] 
-          };
-        }
-      }
-
-      try {
-        // Import filesystem operations
-        const { promises: fs } = await import('fs');
-        
-        // Backup original test plan
-        originalTestPlan = await fs.readFile(options.testPlanPath, 'utf8');
-        shouldRestoreTestPlan = true;
-        
-        // Build selected tests array
-        let selectedTests: string[] = [];
-        
-        // Add individual tests
-        if (options.selectedTests?.length) {
-          selectedTests.push(...options.selectedTests);
-        }
-        
-        // Add all tests from selected test classes
-        if (options.selectedTestClasses?.length) {
-          // For now, add the class names - we'd need to scan for specific test methods later
-          selectedTests.push(...options.selectedTestClasses);
-        }
-        
-        // Get project name from path for container reference
-        const { basename } = await import('path');
-        const projectName = basename(projectPath, '.xcodeproj');
-        
-        // Create test target configuration
-        const testTargets = [{
-          target: {
-            containerPath: `container:${projectName}.xcodeproj`,
-            identifier: targetIdentifier!,
-            name: targetName || targetIdentifier!
-          },
-          selectedTests: selectedTests
-        }];
-        
-        // Update test plan temporarily
-        const { TestPlanTools } = await import('./TestPlanTools.js');
-        await TestPlanTools.updateTestPlanAndReload(
-          options.testPlanPath,
-          projectPath,
-          testTargets
-        );
-        
-        Logger.info(`Temporarily modified test plan to run ${selectedTests.length} selected tests`);
-        
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: `Failed to modify test plan: ${errorMsg}` 
-          }] 
-        };
-      }
+    if (!projectFlag) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Error: Unsupported project type. Expected .xcodeproj or .xcworkspace, received: ${projectPath}`
+        }]
+      };
     }
 
-    // Get initial xcresult files to detect new ones
-    const initialXCResults = await this._findXCResultFiles(projectPath);
+    const schemeResolution = await this._resolveSchemeName(projectFlag, buildContainerPath, requestedScheme);
+    if (!schemeResolution.ok) {
+      return schemeResolution.result;
+    }
+
+    const schemeName = schemeResolution.schemeName;
+    if (options) {
+      options.schemeName = schemeName;
+    }
+
+    if (options?.testPlanPath) {
+      Logger.info(`Ignoring test plan path '${options.testPlanPath}' when invoking xcodebuild. Using -only-testing to target specific tests.`);
+    }
+
     const testStartTime = Date.now();
-    Logger.info(`Test start time: ${new Date(testStartTime).toISOString()}, found ${initialXCResults.length} initial XCResult files`);
 
-    // Start the test action
+    const sanitizedArgs: string[] = [];
+    const onlyTestingIdentifiers = new Set<string>();
 
-    const hasArgs = commandLineArguments && commandLineArguments.length > 0;
-    const script = `
-      (function() {
-        ${getWorkspaceByPathScript(projectPath)}
-        
-        ${hasArgs 
-          ? `const actionResult = workspace.test({withCommandLineArguments: ${JSON.stringify(commandLineArguments)}});`
-          : `const actionResult = workspace.test();`
+    if (commandLineArguments && commandLineArguments.length > 0) {
+      for (let i = 0; i < commandLineArguments.length; i += 1) {
+        const rawArg = commandLineArguments[i];
+        if (!rawArg || typeof rawArg !== 'string') {
+          continue;
         }
-        
-        // Return immediately - we'll monitor the build separately
-        return JSON.stringify({ 
-          actionId: actionResult.id(),
-          message: 'Test started'
+
+        const arg = rawArg.trim();
+        if (arg.length === 0) {
+          continue;
+        }
+
+        if (arg === '-only-testing') {
+          const next = commandLineArguments[i + 1];
+          if (typeof next === 'string' && next.trim().length > 0) {
+            onlyTestingIdentifiers.add(next.trim());
+            i += 1;
+          }
+          continue;
+        }
+
+        if (arg.startsWith('-only-testing:')) {
+          const identifier = arg.slice('-only-testing:'.length).trim();
+          if (identifier.length > 0) {
+            onlyTestingIdentifiers.add(identifier);
+          }
+          continue;
+        }
+
+        sanitizedArgs.push(arg);
+      }
+    }
+
+    if (options?.selectedTests?.length) {
+      for (const testIdentifier of options.selectedTests) {
+        if (typeof testIdentifier === 'string' && testIdentifier.trim().length > 0) {
+          onlyTestingIdentifiers.add(testIdentifier.trim());
+        }
+      }
+    }
+
+    if (options?.selectedTestClasses?.length) {
+      let targetPrefix: string | null = options.testTargetName ?? null;
+
+      if (!targetPrefix && options.testTargetIdentifier) {
+        targetPrefix = options.testTargetIdentifier;
+      }
+
+      if (!targetPrefix && options.selectedTests?.length) {
+        for (const identifier of options.selectedTests) {
+          if (typeof identifier === 'string' && identifier.includes('/')) {
+            targetPrefix = identifier.split('/')[0] ?? null;
+            if (targetPrefix) {
+              break;
+            }
+          }
+        }
+      }
+
+      for (const className of options.selectedTestClasses) {
+        if (typeof className !== 'string' || className.trim().length === 0) {
+          continue;
+        }
+
+        const trimmed = className.trim();
+        const identifier = trimmed.includes('/')
+          ? trimmed
+          : targetPrefix
+            ? `${targetPrefix}/${trimmed}`
+            : trimmed;
+
+        if (identifier.length > 0) {
+          onlyTestingIdentifiers.add(identifier);
+        }
+      }
+    }
+
+    if (onlyTestingIdentifiers.size > 0) {
+      Logger.info(`Applying -only-testing filter for ${onlyTestingIdentifiers.size} test identifier(s).`);
+    }
+
+    const spawnEnv = {
+      ...process.env,
+      NSUnbufferedIO: 'YES'
+    } as NodeJS.ProcessEnv;
+
+    if (!('SIMCTL_CHILD_wait_for_debugger' in spawnEnv) || !spawnEnv.SIMCTL_CHILD_wait_for_debugger) {
+      spawnEnv.SIMCTL_CHILD_wait_for_debugger = '0';
+    }
+    if (!('SIMCTL_CHILD_WAIT_FOR_DEBUGGER' in spawnEnv) || !spawnEnv.SIMCTL_CHILD_WAIT_FOR_DEBUGGER) {
+      spawnEnv.SIMCTL_CHILD_WAIT_FOR_DEBUGGER = '0';
+    }
+
+    const buildWorkingDirectory = dirname(buildContainerPath);
+    const fallbackNotices: string[] = [];
+    let finalAttempt: {
+      exitCode: number;
+      stdoutBuffer: string;
+      stderrBuffer: string;
+      resultBundlePath: string;
+    } | null = null;
+    let disableParallel = false;
+    let attempt = 0;
+
+    while (attempt < 2) {
+      attempt += 1;
+      const resultBundlePath = await this._createTemporaryResultBundlePath(
+        `test-${disableParallel ? 'serial' : 'parallel'}`,
+      );
+
+      const xcodebuildArgs: string[] = [
+        'test',
+        projectFlag,
+        buildContainerPath,
+        '-scheme',
+        schemeName,
+        ...finalDestinationArgs,
+        '-resultBundlePath',
+        resultBundlePath
+      ];
+
+      if (sanitizedArgs.length > 0) {
+        xcodebuildArgs.push(...sanitizedArgs);
+      }
+
+      if (onlyTestingIdentifiers.size > 0) {
+        for (const identifier of onlyTestingIdentifiers) {
+          xcodebuildArgs.push(`-only-testing:${identifier}`);
+        }
+      }
+
+      if (disableParallel) {
+        if (!this._hasArgument(xcodebuildArgs, '-parallel-testing-enabled')) {
+          xcodebuildArgs.push('-parallel-testing-enabled', 'NO');
+        }
+        if (!this._hasArgument(xcodebuildArgs, '-maximum-concurrent-test-simulator-destinations')) {
+          xcodebuildArgs.push('-maximum-concurrent-test-simulator-destinations', '1');
+        }
+        if (!this._hasArgument(xcodebuildArgs, '-disable-concurrent-testing')) {
+          xcodebuildArgs.push('-disable-concurrent-testing');
+        }
+      }
+
+      Logger.info(`Starting xcodebuild test attempt #${attempt} for scheme '${schemeName}' with destination '${destinationLabel}'${disableParallel ? ' (parallel testing disabled)' : ''}`);
+
+      let stdoutBuffer = '';
+      let stderrBuffer = '';
+
+      const child = spawn('xcodebuild', xcodebuildArgs, {
+        cwd: buildWorkingDirectory,
+        env: spawnEnv
+      });
+
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+
+      child.stdout.on('data', data => {
+        stdoutBuffer += data;
+        data.split(/\r?\n/).filter(Boolean).forEach((line: string) => Logger.info(`[xcodebuild] ${line}`));
+      });
+
+      child.stderr.on('data', data => {
+        stderrBuffer += data;
+        data.split(/\r?\n/).filter(Boolean).forEach((line: string) => Logger.warn(`[xcodebuild] ${line}`));
+      });
+
+      const exitCode: number = await new Promise(resolve => {
+        child.on('close', code => resolve(code ?? 0));
+        child.on('error', err => {
+          Logger.error(`xcodebuild failed to start: ${err instanceof Error ? err.message : String(err)}`);
+          resolve(1);
         });
-      })()
-    `;
-    
+      });
+
+      Logger.info(`xcodebuild attempt #${attempt} completed with exit code ${exitCode}`);
+
+      if (!disableParallel) {
+        const cloneFailure = this._detectSimulatorCloneFailure(`${stdoutBuffer}\n${stderrBuffer}`);
+        if (cloneFailure.matched) {
+          const notice = `ℹ️ Detected simulator clone failure for ${cloneFailure.deviceName ?? 'the requested simulator'}; retrying with parallel testing disabled.`;
+          fallbackNotices.push(notice);
+          Logger.warn(`Simulator clone failure detected for ${cloneFailure.deviceName ?? 'unknown simulator'} – retrying with parallel testing disabled.`);
+          disableParallel = true;
+          continue;
+        }
+      }
+
+      finalAttempt = {
+        exitCode,
+        stdoutBuffer,
+        stderrBuffer,
+        resultBundlePath
+      };
+      break;
+    }
+
+    if (!finalAttempt) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        'xcodebuild did not complete successfully after retrying with parallel testing disabled.'
+      );
+    }
+
+    const { exitCode, stdoutBuffer, stderrBuffer, resultBundlePath } = finalAttempt;
+
+    const testDurationMs = Date.now() - testStartTime;
+    const xcresultExists = await this._pathExists(resultBundlePath);
+    const derivedDataPath =
+      (await BuildLogParser.findProjectDerivedData(buildContainerPath)) ??
+      join(tmpdir(), 'xcodemcp-derived-data', 'unknown');
+
     try {
-      const startResult = await JXAExecutor.execute(script);
-      const { actionId, message } = JSON.parse(startResult);
-      
-      Logger.info(`${message} with action ID: ${actionId}`);
-      
-      // Check for and handle "replace existing build" alert
-      await this._handleReplaceExistingBuildAlert();
-      
-      // Check for build errors with polling approach
-      Logger.info('Monitoring for build logs...');
-      
-      // Poll for build logs for up to 30 seconds
-      let foundLogs = false;
-      for (let i = 0; i < 6; i++) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        const logs = await BuildLogParser.getRecentBuildLogs(projectPath, testStartTime);
-        if (logs.length > 0) {
-          Logger.info(`Found ${logs.length} build logs after ${(i + 1) * 5} seconds`);
-          foundLogs = true;
-          break;
+      if (!xcresultExists) {
+        const header = exitCode === 0
+          ? '✅ TESTS COMPLETED'
+          : exitCode === 65
+            ? '❌ TESTS FAILED'
+            : `❌ xcodebuild exited with code ${exitCode}`;
+        let message = `${header}\n\n`;
+        message += `xcodebuild did not produce a result bundle at:\n${resultBundlePath}\n\n`;
+        if (stdoutBuffer.trim().length > 0) {
+          message += `xcodebuild output:\n${stdoutBuffer.trim()}\n\n`;
         }
-        Logger.info(`No logs found after ${(i + 1) * 5} seconds, continuing to wait...`);
-      }
-      
-      if (!foundLogs) {
-        Logger.info('No build logs found after 30 seconds - build may not have started yet');
-      }
-      
-      Logger.info('Build monitoring complete, proceeding to analysis...');
-      
-      // Get ALL recent build logs for analysis (test might create multiple logs)
-      Logger.info(`DEBUG: testStartTime = ${testStartTime} (${new Date(testStartTime)})`);
-      Logger.info(`DEBUG: projectPath = ${projectPath}`);
-      
-      // First check if we can find DerivedData
-      const derivedData = await BuildLogParser.findProjectDerivedData(projectPath);
-      Logger.info(`DEBUG: derivedData = ${derivedData}`);
-      
-      const recentLogs = await BuildLogParser.getRecentBuildLogs(projectPath, testStartTime);
-      Logger.info(`DEBUG: recentLogs.length = ${recentLogs.length}`);
-      if (recentLogs.length > 0) {
-        Logger.info(`Analyzing ${recentLogs.length} recent build logs created during test...`);
-        
-        let totalErrors: string[] = [];
-        let totalWarnings: string[] = [];
-        let hasStoppedBuild = false;
-        
-        // Analyze each recent log to catch build errors in any of them
-        for (const log of recentLogs) {
-          try {
-            Logger.info(`Analyzing build log: ${log.path}`);
-            const results = await BuildLogParser.parseBuildLog(log.path);
-            Logger.info(`Log analysis: ${results.errors.length} errors, ${results.warnings.length} warnings, status: ${results.buildStatus || 'unknown'}`);
-            
-            // Check for stopped builds
-            if (results.buildStatus === 'stopped') {
-              hasStoppedBuild = true;
-            }
-            
-            // Accumulate errors and warnings from all logs
-            totalErrors.push(...results.errors);
-            totalWarnings.push(...results.warnings);
-            
-          } catch (error) {
-            Logger.warn(`Failed to parse build log ${log.path}: ${error instanceof Error ? error.message : error}`);
-          }
+        if (stderrBuffer.trim().length > 0) {
+          message += `stderr:\n${stderrBuffer.trim()}\n`;
         }
-        
-        Logger.info(`Total build analysis: ${totalErrors.length} errors, ${totalWarnings.length} warnings, stopped builds: ${hasStoppedBuild}`);
-        
-        Logger.info(`DEBUG: totalErrors = ${JSON.stringify(totalErrors)}`);
-        Logger.info(`DEBUG: totalErrors.length = ${totalErrors.length}`);
-        Logger.info(`DEBUG: totalErrors.length > 0 = ${totalErrors.length > 0}`);
-        Logger.info(`DEBUG: hasStoppedBuild = ${hasStoppedBuild}`);
-        
-        // Handle stopped builds first
-        if (hasStoppedBuild && totalErrors.length === 0) {
-          let message = `⏹️ TEST BUILD INTERRUPTED${hasArgs ? ` (test with arguments ${JSON.stringify(commandLineArguments)})` : ''}\n\nThe build was stopped or interrupted before completion.\n\n💡 This may happen when:\n  • The build was cancelled manually\n  • Xcode was closed during the build\n  • System resources were exhausted\n\nTry running the test again to complete it.`;
-          return { content: [{ type: 'text', text: message }] };
+        if (fallbackNotices.length > 0) {
+          message += `\n${fallbackNotices.join('\n')}`;
         }
-        
-        if (totalErrors.length > 0) {
-          let message = `❌ TEST BUILD FAILED (${totalErrors.length} errors)\n\nERRORS:\n`;
-          totalErrors.forEach(error => {
-            message += `  • ${error}\n`;
-            Logger.error('Test build error:', error);
-          });
-          
-          if (totalWarnings.length > 0) {
-            message += `\n⚠️ WARNINGS (${totalWarnings.length}):\n`;
-            totalWarnings.slice(0, 10).forEach(warning => {
-              message += `  • ${warning}\n`;
-              Logger.warn('Test build warning:', warning);
-            });
-            if (totalWarnings.length > 10) {
-              message += `  ... and ${totalWarnings.length - 10} more warnings\n`;
-            }
-          }
-          
-          Logger.error('ABOUT TO THROW McpError for test build failure');
-          throw new McpError(ErrorCode.InternalError, message);
-        } else if (totalWarnings.length > 0) {
-          Logger.warn(`Test build completed with ${totalWarnings.length} warnings`);
-          totalWarnings.slice(0, 10).forEach(warning => {
-            Logger.warn('Test build warning:', warning);
-          });
-          if (totalWarnings.length > 10) {
-            Logger.warn(`... and ${totalWarnings.length - 10} more warnings`);
-          }
-        }
-      } else {
-        Logger.info(`DEBUG: No recent build logs found since ${new Date(testStartTime)}`);
+        return { content: [{ type: 'text', text: message }] };
       }
 
-      // Since build passed, now wait for test execution to complete
-      Logger.info('Build succeeded, waiting for test execution to complete...');
-      
-      // Monitor test completion with proper AppleScript checking and 6-hour safety timeout
-      const maxTestTime = 21600000; // 6 hours safety timeout
-      let testCompleted = false;
-      let monitoringSeconds = 0;
-      
-      Logger.info('Monitoring test completion with 6-hour safety timeout...');
-      
-      while (!testCompleted && (Date.now() - testStartTime) < maxTestTime) {
-        try {
-          // Check test completion via AppleScript every 30 seconds
-          const checkScript = `
-            (function() {
-              ${getWorkspaceByPathScript(projectPath)}
-              if (!workspace) return 'No workspace';
-              
-              const actions = workspace.schemeActionResults();
-              for (let i = 0; i < actions.length; i++) {
-                const action = actions[i];
-                if (action.id() === "${actionId}") {
-                  const status = action.status();
-                  const completed = action.completed();
-                  return status + ':' + completed;
-                }
-              }
-              return 'Action not found';
-            })()
-          `;
-          
-          const result = await JXAExecutor.execute(checkScript, 15000);
-          const [status, completed] = result.split(':');
-          
-          // Log progress every 2 minutes
-          if (monitoringSeconds % 120 === 0) {
-            Logger.info(`Test monitoring: ${Math.floor(monitoringSeconds/60)}min - Action ${actionId}: status=${status}, completed=${completed}`);
-          }
-          
-          // Check if test is complete
-          if (completed === 'true' && (status === 'succeeded' || status === 'failed' || status === 'cancelled' || status === 'error occurred')) {
-            testCompleted = true;
-            Logger.info(`Test completed after ${Math.floor(monitoringSeconds/60)} minutes: status=${status}`);
-            break;
-          }
-          
-        } catch (error) {
-          Logger.warn(`Test monitoring error at ${Math.floor(monitoringSeconds/60)}min: ${error instanceof Error ? error.message : error}`);
+      const ready = await XCResultParser.waitForXCResultReadiness(resultBundlePath, testDurationMs);
+      if (!ready) {
+        let message = `❌ XCODE BUG DETECTED\n\n`;
+        message += `XCResult Path: ${resultBundlePath}\n\n`;
+        message += `The result bundle was created but never became readable.\n`;
+        message += `Try deleting DerivedData (${derivedDataPath}) and re-running the tests.\n`;
+        if (fallbackNotices.length > 0) {
+          message += `\n${fallbackNotices.join('\n')}`;
         }
-        
-        // Wait 30 seconds before next check
-        await new Promise(resolve => setTimeout(resolve, 30000));
-        monitoringSeconds += 30;
+        return { content: [{ type: 'text', text: message }] };
       }
-      
-      if (!testCompleted) {
-        Logger.warn('Test monitoring reached 6-hour timeout - proceeding anyway');
-      }
-      
-      Logger.info('Test monitoring result: Test completion detected or timeout reached');
-      
-      // Only AFTER test completion is confirmed, look for the xcresult file
-      Logger.info('Test execution completed, now looking for XCResult file...');
-      let newXCResult = await this._findNewXCResultFile(projectPath, initialXCResults, testStartTime);
-      
-      // If no xcresult found yet, wait for it to appear (should be quick now that tests are done)
-      if (!newXCResult) {
-        Logger.info('No xcresult file found yet, waiting for it to appear...');
-        let attempts = 0;
-        const maxWaitAttempts = 15; // 15 seconds to find the file after test completion
-        
-        while (attempts < maxWaitAttempts && !newXCResult) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          newXCResult = await this._findNewXCResultFile(projectPath, initialXCResults, testStartTime);
-          attempts++;
-        }
-        
-        // If still no XCResult found, the test likely didn't run at all
-        if (!newXCResult) {
-          Logger.warn('No XCResult file found - test may not have run or current scheme has no tests');
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: `⚠️ TEST EXECUTION UNCLEAR\n\nNo XCResult file was created, which suggests:\n• The current scheme may not have test targets configured\n• Tests may have been skipped\n• There may be configuration issues\n\n💡 Try:\n• Use a scheme with test targets (look for schemes ending in '-Tests')\n• Check that the project has test targets configured\n• Run tests manually in Xcode first to verify setup\n\nAvailable schemes: Use 'xcode_get_schemes' to see all schemes` 
-            }] 
-          };
-        }
-      }
-      
-      let testResult: { status: string, error: string | undefined } = { status: 'completed', error: undefined };
-      
-      if (newXCResult) {
-        Logger.info(`Found xcresult file: ${newXCResult}, waiting for it to be fully written...`);
-        
-        // Calculate how long the test took
-        const testEndTime = Date.now();
-        const testDurationMs = testEndTime - testStartTime;
-        const testDurationMinutes = Math.round(testDurationMs / 60000);
-        
-        // Wait 8% of test duration before even attempting to read XCResult
-        // This gives Xcode plenty of time to finish writing everything
-        const proportionalWaitMs = Math.round(testDurationMs * 0.08);
-        const proportionalWaitSeconds = Math.round(proportionalWaitMs / 1000);
-        
-        Logger.info(`Test ran for ${testDurationMinutes} minutes`);
-        Logger.info(`Applying 8% wait time: ${proportionalWaitSeconds} seconds before checking XCResult`);
-        Logger.info(`This prevents premature reads that could contribute to file corruption`);
-        
-        await new Promise(resolve => setTimeout(resolve, proportionalWaitMs));
-        
-        // Now use the robust waiting method with the test duration for context
-        const isReady = await XCResultParser.waitForXCResultReadiness(newXCResult, testDurationMs); // Pass test duration for proportional timeouts
-        
-        if (isReady) {
-          // File is ready, verify analysis works
-          try {
-            Logger.info('XCResult file is ready, performing final verification...');
-            const parser = new XCResultParser(newXCResult);
-            const analysis = await parser.analyzeXCResult();
-          
-            if (analysis && analysis.totalTests >= 0) {
-              Logger.info(`XCResult parsing successful! Found ${analysis.totalTests} tests`);
-              testResult = { status: 'completed', error: undefined };
-            } else {
-              Logger.error('XCResult parsed but incomplete test data found');
-              testResult = { 
-                status: 'failed', 
-                error: `XCResult file exists but contains incomplete test data. This may indicate an Xcode bug.` 
-              };
-            }
-          } catch (parseError) {
-            Logger.error(`XCResult file appears to be corrupt: ${parseError instanceof Error ? parseError.message : parseError}`);
-            testResult = { 
-              status: 'failed', 
-              error: `XCResult file is corrupt or unreadable. This is likely an Xcode bug. Parse error: ${parseError instanceof Error ? parseError.message : parseError}` 
-            };
-          }
-        } else {
-          Logger.error('XCResult file failed to become ready within 3 minutes');
-          testResult = { 
-            status: 'failed', 
-            error: `XCResult file failed to become readable within 3 minutes despite multiple verification attempts. This indicates an Xcode bug where the file remains corrupt or incomplete.` 
-          };
-        }
-      } else {
-        Logger.warn('No xcresult file found after test completion');
-        testResult = { status: 'completed', error: 'No XCResult file found' };
-      }
-      
-      if (newXCResult) {
-        Logger.info(`Found xcresult: ${newXCResult}`);
-        
-        // Check if the xcresult file is corrupt
-        if (testResult.status === 'failed' && testResult.error) {
-          // XCResult file is corrupt
-          let message = `❌ XCODE BUG DETECTED${hasArgs ? ` (test with arguments ${JSON.stringify(commandLineArguments)})` : ''}\n\n`;
-          message += `XCResult Path: ${newXCResult}\n\n`;
-          message += `⚠️ ${testResult.error}\n\n`;
-          message += `This is a known Xcode issue where the .xcresult file becomes corrupt even though Xcode reports test completion.\n\n`;
-          message += `💡 Troubleshooting steps:\n`;
-          message += `  1. Restart Xcode and retry\n`;
-          message += `  2. Delete DerivedData and retry\n\n`;
-          message += `The corrupt XCResult file is at:\n${newXCResult}`;
-          
-          return { content: [{ type: 'text', text: message }] };
-        }
-        
-        // We already confirmed the xcresult is readable in our completion detection loop
-        // No need to wait again - proceed directly to analysis
-        if (testResult.status === 'completed') {
-          try {
-            // Use shared utility to format test results with individual test details
-            const parser = new XCResultParser(newXCResult);
-            const testSummary = await parser.formatTestResultsSummary(true, 5);
-            
-            let message = `🧪 TESTS COMPLETED${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\n`;
-            message += `XCResult Path: ${newXCResult}\n`;
-            message += testSummary + `\n\n`;
-            
-            const analysis = await parser.analyzeXCResult();
-            if (analysis.failedTests > 0) {
-              message += `💡 Inspect test results:\n`;
-              message += `  • Browse results: xcresult-browse --xcresult-path <path>\n`;
-              message += `  • Get console output: xcresult-browser-get-console --xcresult-path <path> --test-id <test-id>\n`;
-              message += `  • Get screenshots: xcresult-get-screenshot --xcresult-path <path> --test-id <test-id> --timestamp <timestamp>\n`;
-              message += `  • Get UI hierarchy: xcresult-get-ui-hierarchy --xcresult-path <path> --test-id <test-id> --timestamp <timestamp>\n`;
-              message += `  • Get element details: xcresult-get-ui-element --hierarchy-json <hierarchy-json> --index <index>\n`;
-              message += `  • List attachments: xcresult-list-attachments --xcresult-path <path> --test-id <test-id>\n`;
-              message += `  • Export attachments: xcresult-export-attachment --xcresult-path <path> --test-id <test-id> --index <index>\n`;
-              message += `  • Quick summary: xcresult-summary --xcresult-path <path>\n`;
-              message += `\n💡 Tip: Use console output to find failure timestamps for screenshots and UI hierarchies`;
-            } else {
-              message += `✅ All tests passed!\n\n`;
-              message += `💡 Explore test results:\n`;
-              message += `  • Browse results: xcresult-browse --xcresult-path <path>\n`;
-              message += `  • Get console output: xcresult-browser-get-console --xcresult-path <path> --test-id <test-id>\n`;
-              message += `  • Get screenshots: xcresult-get-screenshot --xcresult-path <path> --test-id <test-id> --timestamp <timestamp>\n`;
-              message += `  • Get UI hierarchy: xcresult-get-ui-hierarchy --xcresult-path <path> --test-id <test-id> --timestamp <timestamp>\n`;
-              message += `  • Get element details: xcresult-get-ui-element --hierarchy-json <hierarchy-json> --index <index>\n`;
-              message += `  • List attachments: xcresult-list-attachments --xcresult-path <path> --test-id <test-id>\n`;
-              message += `  • Export attachments: xcresult-export-attachment --xcresult-path <path> --test-id <test-id> --index <index>\n`;
-              message += `  • Quick summary: xcresult-summary --xcresult-path <path>`;
-            }
-            
-            return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: message }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
-          } catch (parseError) {
-            Logger.warn(`Failed to parse xcresult: ${parseError}`);
-            // Fall back to basic result
-            let message = `🧪 TESTS COMPLETED${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\n`;
-            message += `XCResult Path: ${newXCResult}\n`;
-            message += `Status: ${testResult.status}\n\n`;
-            message += `Note: XCResult parsing failed, but test file is available for manual inspection.\n\n`;
-            message += `💡 Inspect test results:\n`;
-            message += `  • Browse results: xcresult_browse <path>\n`;
-            message += `  • Get console output: xcresult_browser_get_console <path> <test-id>\n`;
-            message += `  • Get screenshots: xcresult_get_screenshot <path> <test-id> <timestamp>\n`;
-            message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id> <timestamp>\n`;
-            message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
-            message += `  • List attachments: xcresult_list_attachments <path> <test-id>\n`;
-            message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
-            message += `  • Quick summary: xcresult_summary <path>`;
-            
-            return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: message }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
-          }
-        } else {
-          // Test completion detection timed out
-          let message = `🧪 TESTS ${testResult.status.toUpperCase()}${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\n`;
-          message += `XCResult Path: ${newXCResult}\n`;
-          message += `Status: ${testResult.status}\n\n`;
-          message += `⚠️ Test completion detection timed out, but XCResult file is available.\n\n`;
-          message += `💡 Inspect test results:\n`;
-          message += `  • Browse results: xcresult_browse <path>\n`;
-          message += `  • Get console output: xcresult_browser_get_console <path> <test-id>\n`;
-          message += `  • Get screenshots: xcresult_get_screenshot <path> <test-id> <timestamp>\n`;
-          message += `  • Get UI hierarchy: xcresult_get_ui_hierarchy <path> <test-id> <timestamp>\n`;
-          message += `  • Get element details: xcresult_get_ui_element <hierarchy-json> <index>\n`;
-          message += `  • List attachments: xcresult_list_attachments <path> <test-id>\n`;
-          message += `  • Export attachments: xcresult_export_attachment <path> <test-id> <index>\n`;
-          message += `  • Quick summary: xcresult_summary <path>`;
-          
-          return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: message }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
-        }
-      } else {
-        // No xcresult found - fall back to basic result
-        if (testResult.status === 'failed') {
-          return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: `❌ TEST FAILED\n\n${testResult.error || 'Test execution failed'}\n\nNote: No XCResult file found for detailed analysis.` }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
-        }
-        
-        const message = `🧪 TESTS COMPLETED${hasArgs ? ` with arguments ${JSON.stringify(commandLineArguments)}` : ''}\n\nStatus: ${testResult.status}\n\nNote: No XCResult file found for detailed analysis.`;
-        return await this._restoreTestPlanAndReturn({ content: [{ type: 'text', text: message }] }, shouldRestoreTestPlan, originalTestPlan, options?.testPlanPath);
-      }
-    } catch (error) {
-      // Restore test plan even on error
-      if (shouldRestoreTestPlan && originalTestPlan && options?.testPlanPath) {
-        try {
-          const { promises: fs } = await import('fs');
-          await fs.writeFile(options.testPlanPath, originalTestPlan, 'utf8');
-          Logger.info('Restored original test plan after error');
-        } catch (restoreError) {
-          Logger.error(`Failed to restore test plan: ${restoreError}`);
-        }
-      }
-      
-      // Re-throw McpErrors to properly signal build failures
-      if (error instanceof McpError) {
-        throw error;
-      }
-      
-      const enhancedError = ErrorHelper.parseCommonErrors(error as Error);
-      if (enhancedError) {
-        return { content: [{ type: 'text', text: enhancedError }] };
-      }
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return { content: [{ type: 'text', text: `Failed to run tests: ${errorMessage}` }] };
-    }
-  }
 
-  /**
-   * Helper method to restore test plan and return result
-   */
-  private static async _restoreTestPlanAndReturn(
-    result: McpResult,
-    shouldRestoreTestPlan: boolean,
-    originalTestPlan: string | null,
-    testPlanPath?: string
-  ): Promise<McpResult> {
-    if (shouldRestoreTestPlan && originalTestPlan && testPlanPath) {
       try {
-        const { promises: fs } = await import('fs');
-        await fs.writeFile(testPlanPath, originalTestPlan, 'utf8');
-        Logger.info('Restored original test plan');
-        
-        // Trigger reload after restoration
-        const { TestPlanTools } = await import('./TestPlanTools.js');
-        await TestPlanTools.triggerTestPlanReload(testPlanPath, testPlanPath);
-      } catch (restoreError) {
-        Logger.error(`Failed to restore test plan: ${restoreError}`);
-        // Append restoration error to result
-        if (result.content?.[0]?.type === 'text') {
-          result.content[0].text += `\n\n⚠️ Warning: Failed to restore original test plan: ${restoreError}`;
+        const parser = new XCResultParser(resultBundlePath);
+        const testSummary = await parser.formatTestResultsSummary(true, 5);
+        const analysis = await parser.analyzeXCResult();
+
+        const header = analysis.failedTests > 0
+          ? `❌ TESTS FAILED (${analysis.failedTests} test${analysis.failedTests === 1 ? '' : 's'} failed)`
+          : '✅ All tests passed';
+
+        let message = `🧪 TESTS COMPLETED (xcodebuild exit code ${exitCode})\n\n`;
+        message += `${header}\n`;
+        message += `XCResult Path: ${resultBundlePath}\n\n`;
+        message += `${testSummary}\n\n`;
+
+        if (analysis.failedTests > 0) {
+          message += `💡 Inspect test results:\n`;
+          message += `  • Browse results: xcresult-browse --xcresult-path "${resultBundlePath}"\n`;
+          message += `  • Get console output: xcresult-browser-get-console --xcresult-path "${resultBundlePath}" --test-id <test-id>\n`;
+          message += `  • Get screenshots: xcresult-get-screenshot --xcresult-path "${resultBundlePath}" --test-id <test-id> --timestamp <timestamp>\n`;
+          message += `  • Get UI hierarchy: xcresult-get-ui-hierarchy --xcresult-path "${resultBundlePath}" --test-id <test-id>\n`;
+          message += `  • Export attachments: xcresult-export-attachment --xcresult-path "${resultBundlePath}" --test-id <test-id> --index <index>\n`;
+          message += `  • Quick summary: xcresult-summary --xcresult-path "${resultBundlePath}"\n`;
+        } else {
+          message += `💡 Explore test results:\n`;
+          message += `  • Browse results: xcresult-browse --xcresult-path "${resultBundlePath}"\n`;
+          message += `  • Get console output: xcresult-browser-get-console --xcresult-path "${resultBundlePath}" --test-id <test-id>\n`;
+          message += `  • Get screenshots: xcresult-get-screenshot --xcresult-path "${resultBundlePath}" --test-id <test-id> --timestamp <timestamp>\n`;
+          message += `  • Quick summary: xcresult-summary --xcresult-path "${resultBundlePath}"\n`;
         }
+
+        if (analysis.failedTests === 0 && exitCode !== 0 && stdoutBuffer.trim().length > 0) {
+          message += `\n⚠️ xcodebuild exit code ${exitCode} despite passing tests.\n`;
+          message += `xcodebuild output:\n${stdoutBuffer.trim()}\n`;
+        }
+
+        if (fallbackNotices.length > 0) {
+          message += `\n${fallbackNotices.join('\n')}`;
+        }
+
+        return { content: [{ type: 'text', text: message }] };
+      } catch (error) {
+        Logger.warn(`Failed to parse xcresult: ${error instanceof Error ? error.message : String(error)}`);
+        let message = `🧪 TESTS COMPLETED (xcodebuild exit code ${exitCode})\n\n`;
+        message += `XCResult Path: ${resultBundlePath}\n\n`;
+        message += `Result bundle is available but could not be parsed automatically.`;
+        if (stdoutBuffer.trim().length > 0) {
+          message += `\n\nxcodebuild output:\n${stdoutBuffer.trim()}`;
+        }
+        if (fallbackNotices.length > 0) {
+          message += `\n\n${fallbackNotices.join('\n')}`;
+        }
+        return { content: [{ type: 'text', text: message }] };
       }
+    } finally {
+      // keep result bundles available for inspection; no cleanup required
     }
-    return result;
   }
 
   public static async run(
-    projectPath: string, 
+    projectPath: string,
     schemeName: string,
-    commandLineArguments: string[] = [], 
+    reason: string,
+    commandLineArguments: string[] = [],
     openProject: OpenProjectCallback
   ): Promise<McpResult> {
     const validationError = PathValidator.validateProjectPath(projectPath);
     if (validationError) return validationError;
 
     await openProject(projectPath);
+
+    let logRecord: BuildLogRecord | null = null;
+    let runLogRecord: BuildLogRecord | null = null;
+    let lockFooterText: string | null = null;
+    let autoReleaseNote: string | null = null;
+    const applyLockFooter = (message: string): string => {
+      if (autoReleaseNote) {
+        const note = `🔓 Lock automatically released: ${autoReleaseNote}\nNo manual release command is required for this attempt.`;
+        return `${message}\n\n${note}`;
+      }
+      return LockManager.appendFooter(message, lockFooterText);
+    };
+    const attachLogHint = (message: string): string => {
+      if (!logRecord) return applyLockFooter(message);
+      const hintLines = [
+        '🪵 Build Log Metadata',
+        `  • Log ID: ${logRecord.id}`,
+        `  • Path: ${logRecord.logPath}`,
+      ];
+      if (logRecord.schemeName) {
+        hintLines.splice(1, 0, `  • Scheme: ${logRecord.schemeName}`);
+      }
+      hintLines.push(`  • View: xcodecontrol view-build-log --log-id ${logRecord.id}`);
+      return applyLockFooter(`${message}\n\n${hintLines.join('\n')}`);
+    };
+    const attachRunLogHint = (message: string): string => {
+      if (!runLogRecord) return applyLockFooter(message);
+      const hintLines = [
+        '🪵 Run Log Metadata',
+        `  • Log ID: ${runLogRecord.id}`,
+        `  • Path: ${runLogRecord.logPath}`,
+        `  • View: xcodecontrol view-run-log --log-id ${runLogRecord.id}`,
+      ];
+      if (runLogRecord.schemeName) {
+        hintLines.splice(1, 0, `  • Scheme: ${runLogRecord.schemeName}`);
+      }
+      return applyLockFooter(`${message}\n\n${hintLines.join('\n')}`);
+    };
+    const attachAllHints = (message: string): string => attachRunLogHint(attachLogHint(message));
+    const finalizeLogStatus = (status: 'active' | 'completed' | 'failed', buildStatus?: string | null) => {
+      const extras =
+        buildStatus === undefined
+          ? undefined
+          : {
+              buildStatus,
+            };
+      BuildLogStore.updateStatus(logRecord?.id, status, extras);
+    };
 
     // Set the scheme
     const normalizedSchemeName = ParameterNormalizer.normalizeSchemeName(schemeName);
@@ -1034,6 +1041,29 @@ export class BuildTools {
     }
 
     // Note: No longer need to track initial log since we use AppleScript completion detection
+    const { footerText: runLockFooter } = await LockManager.acquireLock(projectPath, reason, 'xcode_build_and_run');
+    lockFooterText = runLockFooter;
+    let runLockReleased = false;
+    const releaseRunLock = async (): Promise<void> => {
+      if (runLockReleased) {
+        return;
+      }
+      try {
+        await LockManager.releaseLock(projectPath);
+      } catch (error) {
+        Logger.warn(
+          `Failed to release run lock for ${projectPath}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      } finally {
+        runLockReleased = true;
+      }
+    };
+    const markRunAutoRelease = async (reasonText: string): Promise<void> => {
+      autoReleaseNote = reasonText;
+      await releaseRunLock();
+    };
 
     const hasArgs = commandLineArguments && commandLineArguments.length > 0;
     const script = `
@@ -1055,7 +1085,15 @@ export class BuildTools {
     const actionId = actionIdMatch ? actionIdMatch[1] : null;
     
     if (!actionId) {
-      return { content: [{ type: 'text', text: `${runResult}\n\nError: Could not extract action ID from run result` }] };
+      await markRunAutoRelease('Failed to read the run identifier from Xcode');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: applyLockFooter(`${runResult}\n\nError: Could not extract action ID from run result`),
+          },
+        ],
+      };
     }
     
     Logger.info(`Run started with action ID: ${actionId}`);
@@ -1064,15 +1102,26 @@ export class BuildTools {
     await this._handleReplaceExistingBuildAlert();
 
     // Monitor run completion using AppleScript instead of build log detection
-    Logger.info(`Monitoring run completion using AppleScript for action ID: ${actionId}`);
     const maxRunTime = 3600000; // 1 hour safety timeout
+    const runMonitorTimeoutMs = 50000; // exit early to avoid MCP call timeout
     const runStartTime = Date.now();
+    const checkIntervalMs = 3000;
+    const runningConfirmationMs = 6000;
+    Logger.info(
+      `Monitoring run completion using AppleScript for action ID: ${actionId} (interval=${checkIntervalMs}ms, running confirmation=${runningConfirmationMs}ms, guardrail=${runMonitorTimeoutMs}ms)`,
+    );
     let runCompleted = false;
-    let monitoringSeconds = 0;
+    let monitoringElapsedMs = 0;
+    let runningObservedAt: number | null = null;
+    let monitoringAbortedForTimeout = false;
+    let lastStatus: string | null = null;
+    let lastCompleted: string | null = null;
+    let iteration = 0;
     
     while (!runCompleted && (Date.now() - runStartTime) < maxRunTime) {
       try {
-        // Check run completion via AppleScript every 10 seconds
+        iteration += 1;
+        // Check run completion via AppleScript at the configured interval
         const checkScript = `
           (function() {
             ${getWorkspaceByPathScript(projectPath)}
@@ -1091,12 +1140,27 @@ export class BuildTools {
           })()
         `;
         
-        const result = await JXAExecutor.execute(checkScript, 15000);
-        const [status, completed] = result.split(':');
+        const result = await JXAExecutor.execute(checkScript, 10000);
+        const parts = result.split(':');
+        const status = parts[0] ?? 'unknown';
+        const completed: string | null = parts.length > 1 ? (parts[1] ?? '') : null;
+        if (result === 'No workspace') {
+          Logger.warn(`Run monitoring iteration ${iteration}: workspace not available yet.`);
+        } else if (result === 'Action not found') {
+          Logger.debug(`Run monitoring iteration ${iteration}: action ${actionId} not visible yet.`);
+        }
         
-        // Log progress every 2 minutes
-        if (monitoringSeconds % 120 === 0) {
-          Logger.info(`Run monitoring: ${Math.floor(monitoringSeconds/60)}min - Action ${actionId}: status=${status}, completed=${completed}`);
+        // Emit a log whenever status changes or every 2 minutes
+        if (status !== lastStatus || completed !== lastCompleted) {
+          Logger.info(
+            `Run status update after ${Math.round((Date.now() - runStartTime) / 1000)}s: action=${actionId}, status=${status}, completed=${completed ?? 'n/a'}`,
+          );
+          lastStatus = status;
+          lastCompleted = completed;
+        } else if ((monitoringElapsedMs % 120000) === 0) {
+          Logger.info(
+            `Run status heartbeat at ${Math.floor(monitoringElapsedMs / 60000)}min: action=${actionId}, status=${status}, completed=${completed ?? 'n/a'}`,
+          );
         }
         
         // For run actions, we need different completion logic than build/test
@@ -1104,48 +1168,223 @@ export class BuildTools {
         if (completed === 'true' && (status === 'failed' || status === 'cancelled' || status === 'error occurred')) {
           // Run failed/cancelled - this is a true completion
           runCompleted = true;
-          Logger.info(`Run completed after ${Math.floor(monitoringSeconds/60)} minutes: status=${status}`);
+          Logger.info(
+            `Run completed after ${Math.floor(monitoringElapsedMs / 60000)} minutes: status=${status}`,
+          );
           break;
-        } else if (status === 'running' && monitoringSeconds >= 60) {
-          // If still running after 60 seconds, assume the app launched successfully
-          // We'll check for build errors in the log parsing step
-          runCompleted = true;
-          Logger.info(`Run appears successful after ${Math.floor(monitoringSeconds/60)} minutes (app likely launched)`);
-          break;
+        } else if (status === 'running') {
+          if (!runningObservedAt) {
+            runningObservedAt = Date.now();
+            Logger.info('Run reported status "running"; waiting briefly to confirm app launch.');
+          } else if ((Date.now() - runningObservedAt) >= runningConfirmationMs) {
+            // Assume the app launched successfully once we've seen "running" for long enough
+            runCompleted = true;
+            const elapsedMs = Date.now() - runStartTime;
+            Logger.info(`Run appears successful after ${Math.round(elapsedMs / 1000)}s (status stayed 'running' for ~${Math.round((Date.now() - runningObservedAt) / 1000)}s)`);
+            break;
+          }
         } else if (status === 'succeeded') {
           // This might happen briefly during transition, wait a bit more
           Logger.info(`Run status shows 'succeeded', waiting to see if it transitions to 'running'...`);
+        } else {
+          runningObservedAt = null;
         }
         
       } catch (error) {
-        Logger.warn(`Run monitoring error at ${Math.floor(monitoringSeconds/60)}min: ${error instanceof Error ? error.message : error}`);
+        Logger.warn(
+          `Run monitoring error at ${Math.floor(monitoringElapsedMs / 60000)}min: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+
+      if (!runCompleted && (Date.now() - runStartTime) >= runMonitorTimeoutMs) {
+        monitoringAbortedForTimeout = true;
+        Logger.warn(
+          `Run monitoring exceeded 50s guardrail – returning early to avoid MCP timeout (last status: ${lastStatus ?? 'unknown'}, completed=${lastCompleted ?? 'n/a'})`,
+        );
+        break;
       }
       
-      // Wait 10 seconds before next check
-      await new Promise(resolve => setTimeout(resolve, 10000));
-      monitoringSeconds += 10;
+      // Wait before next check
+      await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
+      monitoringElapsedMs += checkIntervalMs;
     }
     
     if (!runCompleted) {
+      if (monitoringAbortedForTimeout) {
+        Logger.warn(
+          `Run monitoring exited early after ${Math.round((Date.now() - runStartTime) / 1000)}s (status=${lastStatus ?? 'unknown'}, completed=${lastCompleted ?? 'n/a'})`,
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: attachRunLogHint(`${runResult}\n\n⏳ Run is still in progress after approximately ${
+              Math.round((Date.now() - runStartTime) / 1000)
+              } seconds (last known status: ${lastStatus ?? 'unknown'}, completed=${lastCompleted ?? 'n/a'}).\n\nThe app should keep launching in Xcode/Simulator. Check Xcode's report navigator for the final build status or rerun this command once the launch completes.`),
+            },
+          ],
+        };
+      }
       Logger.warn('Run monitoring reached 1-hour timeout - proceeding anyway');
     }
-    
     // Now find the build log that was created during this run
-    const newLog = await BuildLogParser.getLatestBuildLog(projectPath);
+    Logger.info('Searching for build logs created during run...');
+    const logSearchStart = Date.now();
+    const logWaitTimeoutMs = 3600 * 1000; // 1 hour
+    let newLog = null;
+    while (Date.now() - logSearchStart < logWaitTimeoutMs) {
+      const recentLogs = await BuildLogParser.getRecentBuildLogs(projectPath, runStartTime);
+      const newestLog = recentLogs[0];
+      if (newestLog) {
+        Logger.info(
+          `Found run build log created after start: ${newestLog.path} (mtime=${newestLog.mtime.toISOString()})`,
+        );
+        newLog = newestLog;
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
     if (!newLog) {
-      return { content: [{ type: 'text', text: `${runResult}\n\nNote: Run completed but no build log found (app may have launched without building)` }] };
+      Logger.warn('Run completed but no new build log appeared; falling back to latest log.');
+      newLog = await BuildLogParser.getLatestBuildLog(projectPath);
+      if (!newLog) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: attachRunLogHint(`${runResult}\n\nNote: Run completed but no build log was found (app may have launched without building).`),
+            },
+          ],
+        };
+      }
     }
     
+    if (!logRecord) {
+      logRecord = BuildLogStore.registerLog({
+        projectPath,
+        logPath: newLog.path,
+        schemeName,
+        action: 'run',
+        logKind: 'build',
+      });
+    }
+
+    const runConsoleLog = await BuildLogParser.getLatestRunLog(projectPath, runStartTime);
+    if (runConsoleLog) {
+      runLogRecord = BuildLogStore.registerLog({
+        projectPath,
+        logPath: runConsoleLog.path,
+        schemeName,
+        action: 'run',
+        logKind: 'run',
+      });
+      BuildLogStore.updateStatus(runLogRecord.id, 'completed', { buildStatus: null });
+    } else {
+      Logger.warn('Unable to locate run console log for this session.');
+    }
+
     Logger.info(`Run completed, parsing build log: ${newLog.path}`);
-    const results = await BuildLogParser.parseBuildLog(newLog.path);
+
+    const parseStart = Date.now();
+    const parseTimeoutMs = 20000;
+    let parseTimedOut = false;
+    let parseError: unknown = null;
+    let results: ParsedBuildResults | null = null;
+
+    const parsePromise = BuildLogParser.parseBuildLog(newLog.path);
+
+    parsePromise.catch(error => {
+      parseError = error;
+      Logger.error(`Build log parsing failed: ${error instanceof Error ? error.message : error}`);
+    });
+
+    try {
+      results = await Promise.race<ParsedBuildResults | null>([
+        parsePromise,
+        new Promise(resolve => {
+          setTimeout(() => {
+            parseTimedOut = true;
+            resolve(null);
+          }, parseTimeoutMs);
+        }),
+      ]);
+    } catch (error) {
+      parseError = error;
+      Logger.warn(
+        `Build log parsing threw an error after ${Math.round((Date.now() - parseStart) / 1000)}s: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+
+    if (parseTimedOut) {
+      Logger.warn(
+        `Build log parsing exceeded ${parseTimeoutMs / 1000}s guardrail for ${newLog.path}; returning early while parsing continues in background.`,
+      );
+      void parsePromise
+        .then(finalResult => {
+          Logger.info(
+            `Deferred build log parse completed after ${Math.round((Date.now() - parseStart) / 1000)}s - errors=${finalResult.errors.length}, warnings=${finalResult.warnings.length}`,
+          );
+        })
+        .catch(err => {
+          Logger.warn(
+            `Deferred build log parse failed: ${err instanceof Error ? err.message : err}`,
+          );
+        });
+    } else if (results) {
+      Logger.info(
+        `Build log parsed in ${Math.round((Date.now() - parseStart) / 1000)}s - errors=${results.errors.length}, warnings=${results.warnings.length}`,
+      );
+    }
     
     let message = `${runResult}\n\n`;
-    Logger.info(`Run build completed - ${results.errors.length} errors, ${results.warnings.length} warnings, status: ${results.buildStatus || 'unknown'}`);
+    if (!results) {
+      if (parseTimedOut) {
+        message += '⏳ Build log parsing is still in progress (took longer than 20 seconds).\n\n';
+        message += `Open the log in Xcode for full details:\n  • ${newLog.path}`;
+      } else {
+        message += '⚠️ Unable to summarize the build log automatically.\n\n';
+        if (parseError instanceof Error) {
+          message += `Reason: ${parseError.message}\n\n`;
+        }
+        message += `You can open the log manually in Xcode:\n  • ${newLog.path}`;
+      }
+      finalizeLogStatus('completed', null);
+      return { content: [{ type: 'text', text: attachAllHints(message) }] };
+    }
+
+    Logger.info(
+      `Run build completed - ${results.errors.length} errors, ${results.warnings.length} warnings, status: ${results.buildStatus || 'unknown'}`,
+    );
+
+    const normalizedStatus = results.buildStatus ? results.buildStatus.toLowerCase() : null;
+    const statusIndicatesFailure = normalizedStatus
+      ? normalizedStatus !== 'stopped' &&
+        normalizedStatus !== 'interrupted' &&
+        FAILURE_STATUS_TOKENS.some(token => normalizedStatus.includes(token))
+      : false;
+    const summaryIndicatesFailure =
+      typeof results.errorCount === 'number' && results.errorCount > 0;
+
+    if (results.errors.length === 0 && (statusIndicatesFailure || summaryIndicatesFailure)) {
+      const descriptor = results.buildStatus
+        ? `Xcode reported build status '${results.buildStatus}'`
+        : 'Xcode reported build errors in the log summary';
+      results.errors = [
+        `${descriptor} for log ${newLog.path}. Open the log in Xcode for full details.`,
+      ];
+    }
     
     // Handle stopped/interrupted builds
     if (results.buildStatus === 'stopped') {
       message += `⏹️ BUILD INTERRUPTED\n\nThe build was stopped or interrupted before completion.\n\n💡 This may happen when:\n  • The build was cancelled manually\n  • Xcode was closed during the build\n  • System resources were exhausted\n\nTry running the build again to complete it.`;
-      return { content: [{ type: 'text', text: message }] };
+      finalizeLogStatus('failed', results.buildStatus);
+      await markRunAutoRelease('Run was interrupted');
+      return { content: [{ type: 'text', text: attachLogHint(message) }] };
     }
     
     if (results.errors.length > 0) {
@@ -1153,9 +1392,11 @@ export class BuildTools {
       results.errors.forEach(error => {
         message += `  • ${error}\n`;
       });
+      finalizeLogStatus('failed', results.buildStatus ?? 'failed');
+      await markRunAutoRelease('Run build failed with errors');
       throw new McpError(
         ErrorCode.InternalError,
-        message
+        attachAllHints(message)
       );
     } else if (results.warnings.length > 0) {
       message += `⚠️ BUILD COMPLETED WITH WARNINGS (${results.warnings.length} warnings)\n\nWARNINGS:\n`;
@@ -1166,7 +1407,8 @@ export class BuildTools {
       message += '✅ BUILD SUCCESSFUL - App should be launching';
     }
 
-    return { content: [{ type: 'text', text: message }] };
+    finalizeLogStatus('completed', results.buildStatus ?? null);
+    return { content: [{ type: 'text', text: attachAllHints(message) }] };
   }
 
   public static async debug(
@@ -1299,60 +1541,6 @@ export class BuildTools {
   }
 
 
-  private static async _findNewXCResultFile(
-    projectPath: string, 
-    initialFiles: { path: string; mtime: number }[], 
-    testStartTime: number
-  ): Promise<string | null> {
-    const maxAttempts = 30; // 30 seconds
-    let attempts = 0;
-    
-    while (attempts < maxAttempts) {
-      const currentFiles = await this._findXCResultFiles(projectPath);
-      
-      // Look for new files created after test start
-      for (const file of currentFiles) {
-        const wasInitialFile = initialFiles.some(initial => 
-          initial.path === file.path && initial.mtime === file.mtime
-        );
-        
-        if (!wasInitialFile && file.mtime >= testStartTime - 5000) { // 5s buffer
-          Logger.info(`Found new xcresult file: ${file.path}, mtime: ${new Date(file.mtime)}, test start: ${new Date(testStartTime)}`);
-          return file.path;
-        } else if (!wasInitialFile) {
-          Logger.warn(`Found xcresult file but too old: ${file.path}, mtime: ${new Date(file.mtime)}, test start: ${new Date(testStartTime)}, diff: ${file.mtime - testStartTime}ms`);
-        } else {
-          Logger.debug(`Skipping initial file: ${file.path}, mtime: ${new Date(file.mtime)}`);
-        }
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      attempts++;
-    }
-    
-    // If no new file found, look for files created AFTER test start time
-    const allFiles = await this._findXCResultFiles(projectPath);
-    
-    // Find files created after the test started (not just within the timeframe)
-    const filesAfterTestStart = allFiles.filter(file => file.mtime > testStartTime);
-    
-    if (filesAfterTestStart.length > 0) {
-      // Return the newest file that was created after the test started
-      const mostRecentAfterTest = filesAfterTestStart[0]; // Already sorted newest first
-      if (mostRecentAfterTest) {
-        Logger.warn(`Using most recent xcresult file created after test start: ${mostRecentAfterTest.path}`);
-        return mostRecentAfterTest.path;
-      }
-    } else if (allFiles.length > 0) {
-      const mostRecent = allFiles[0];
-      if (mostRecent) {
-        Logger.debug(`Most recent file too old: ${mostRecent.path}, mtime: ${new Date(mostRecent.mtime)}, test start: ${new Date(testStartTime)}`);
-      }
-    }
-    
-    return null;
-  }
-
   /**
    * Find XCResult files for a given project
    */
@@ -1417,12 +1605,614 @@ export class BuildTools {
 
   private static _formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 bytes';
-    
+
     const k = 1024;
     const sizes = ['bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
+
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  }
+
+  private static async _pathExists(targetPath: string): Promise<boolean> {
+    try {
+      await stat(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private static async _buildDestinationArgs(destination: string): Promise<string[] | null> {
+    if (!destination || typeof destination !== 'string') {
+      return null;
+    }
+
+    const trimmed = destination.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    if (trimmed.includes('=')) {
+      return ['-destination', trimmed];
+    }
+
+    let name = trimmed;
+    let osVersion: string | null = null;
+    const parenMatch = trimmed.match(/^(.*)\(([^)]+)\)$/);
+    if (parenMatch) {
+      name = parenMatch[1]?.trim() ?? trimmed;
+      osVersion = parenMatch[2]?.trim() ?? null;
+    }
+
+    const lowerName = name.toLowerCase();
+    let platform = 'iOS Simulator';
+    if (lowerName.includes('watch')) {
+      platform = 'watchOS Simulator';
+    } else if (lowerName.includes('tv')) {
+      platform = 'tvOS Simulator';
+    } else if (lowerName.includes('mac')) {
+      platform = 'macOS';
+    }
+
+    if (platform === 'macOS') {
+      let destinationValue = `platform=${platform}`;
+      if (osVersion) {
+        destinationValue += `,OS=${osVersion}`;
+      }
+      return ['-destination', destinationValue];
+    }
+
+    const originalInput = trimmed;
+    let resolved = await this._findBestSimulatorId(name, osVersion, platform);
+    if (!resolved && osVersion) {
+      resolved = await this._findBestSimulatorId(name, null, platform);
+    }
+    if (!resolved && originalInput !== name) {
+      resolved = await this._findBestSimulatorId(originalInput, null, platform);
+    }
+    if (resolved) {
+      let destinationValue = `platform=${platform},id=${resolved.id}`;
+      if (resolved.osVersion) {
+        destinationValue += `,OS=${resolved.osVersion}`;
+      } else if (osVersion) {
+        destinationValue += `,OS=${osVersion}`;
+      }
+      return ['-destination', destinationValue];
+    }
+
+    let destinationValue = `platform=${platform},name=${name}`;
+    if (osVersion) {
+      destinationValue += `,OS=${osVersion}`;
+    }
+    return ['-destination', destinationValue];
+  }
+
+  private static async _buildDestinationArgsForDevice(
+    deviceType: string,
+    osVersion: string | null,
+  ): Promise<{ args: string[]; label: string } | null> {
+    const normalizedType = deviceType.trim().toLowerCase();
+    if (normalizedType.length === 0) {
+      return null;
+    }
+
+    const normalizedOs = osVersion && osVersion.trim().length > 0 ? osVersion.trim() : null;
+
+    if (normalizedType.startsWith('mac')) {
+      let destinationValue = 'platform=macOS';
+      if (normalizedOs) {
+        destinationValue += `,OS=${normalizedOs}`;
+      }
+      return { args: ['-destination', destinationValue], label: destinationValue };
+    }
+
+    let platform: 'iOS Simulator' | 'watchOS Simulator' | 'tvOS Simulator' | 'visionOS Simulator';
+    let familyMatcher: (name: string) => boolean;
+
+    if (normalizedType.startsWith('iphone') || normalizedType === 'ios' || normalizedType === 'phone') {
+      platform = 'iOS Simulator';
+      familyMatcher = name => name.toLowerCase().startsWith('iphone');
+    } else if (normalizedType.startsWith('ipad')) {
+      platform = 'iOS Simulator';
+      familyMatcher = name => name.toLowerCase().startsWith('ipad');
+    } else if (normalizedType.includes('watch')) {
+      platform = 'watchOS Simulator';
+      familyMatcher = name => name.toLowerCase().includes('apple watch');
+    } else if (normalizedType.includes('tv')) {
+      platform = 'tvOS Simulator';
+      familyMatcher = name => name.toLowerCase().includes('apple tv');
+    } else if (normalizedType.includes('vision')) {
+      platform = 'visionOS Simulator';
+      familyMatcher = name => name.toLowerCase().includes('vision');
+    } else {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Unsupported device_type '${deviceType}'. Expected values include iphone, ipad, mac, watch, tv, or vision.`,
+      );
+    }
+
+    const inventory = await this._getSimulatorInventory();
+    if (inventory.length === 0) {
+      return null;
+    }
+
+    const preferenceKey = this._buildSimulatorPreferenceKey(platform, normalizedType, normalizedOs);
+    const preferences = await this._loadSimulatorPreferences();
+    const remembered = preferences[preferenceKey];
+
+    const candidates = inventory
+      .filter(device => device.platform === platform && familyMatcher(device.name) && device.isAvailable)
+      .map(device => ({
+        ...device,
+        versionMatch: normalizedOs && device.runtimeVersion
+          ? this._runtimeMatchesRequested(device.runtimeVersion, normalizedOs)
+          : normalizedOs === null,
+      }));
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const versionMatches = normalizedOs
+      ? candidates.filter(candidate => candidate.versionMatch)
+      : candidates;
+    const candidatePool = versionMatches.length > 0 ? versionMatches : candidates;
+    const allBooted = candidatePool.every(candidate => candidate.state.toLowerCase() === 'booted');
+
+    let selected = null as (typeof candidates)[number] | null;
+    if (remembered) {
+      selected = candidatePool.find(candidate => candidate.udid === remembered.udid) ?? null;
+      if (selected && selected.state.toLowerCase() === 'booted' && !allBooted) {
+        selected = null;
+      }
+    }
+
+    if (!selected) {
+      const idleCandidates = candidatePool.filter(candidate => candidate.state.toLowerCase() !== 'booted');
+      const rankingPool = idleCandidates.length > 0 ? idleCandidates : candidatePool;
+      rankingPool.sort((a, b) => this._scoreSimulatorCandidate(b, normalizedOs) - this._scoreSimulatorCandidate(a, normalizedOs));
+      selected = rankingPool[0] ?? null;
+    }
+
+    if (!selected) {
+      return null;
+    }
+
+    const destinationOs = normalizedOs || selected.runtimeVersion || undefined;
+    let destinationValue = `platform=${platform},id=${selected.udid}`;
+    if (destinationOs) {
+      destinationValue += `,OS=${destinationOs}`;
+    }
+
+    const rememberPayload: { udid: string; name?: string; runtimeVersion?: string } = {
+      udid: selected.udid,
+    };
+    if (selected.name) {
+      rememberPayload.name = selected.name;
+    }
+    if (selected.runtimeVersion) {
+      rememberPayload.runtimeVersion = selected.runtimeVersion;
+    }
+    await this._rememberSimulatorSelection(preferenceKey, rememberPayload);
+
+    const label = `${selected.name}${selected.runtimeVersion ? ` (${selected.runtimeVersion})` : ''}`;
+    return { args: ['-destination', destinationValue], label };
+  }
+
+  private static async _findBestSimulatorId(
+    name: string,
+    osVersion: string | null,
+    platform: string
+  ): Promise<{ id: string; osVersion?: string } | null> {
+    try {
+      const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        execFile('xcrun', ['simctl', 'list', 'devices', '--json'], (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve({ stdout, stderr });
+          }
+        });
+      });
+
+      const parsed = JSON.parse(stdout) as {
+        devices?: Record<string, Array<{ name: string; udid: string; isAvailable?: boolean; state?: string }>>;
+      };
+
+      if (parsed.devices) {
+        const normalizedName = name.toLowerCase();
+        let bestMatch: { id: string; osVersion?: string } | null = null;
+
+        const desiredPrefix = platform.startsWith('watchOS')
+          ? 'com.apple.CoreSimulator.SimRuntime.watchOS'
+          : platform.startsWith('tvOS')
+            ? 'com.apple.CoreSimulator.SimRuntime.tvOS'
+            : 'com.apple.CoreSimulator.SimRuntime.iOS';
+
+        for (const [runtime, devices] of Object.entries(parsed.devices)) {
+          if (!runtime.startsWith(desiredPrefix)) {
+            continue;
+          }
+
+          const runtimeVersionMatch = runtime.match(/-(\d+)-(\d+)/);
+          const runtimeVersion = runtimeVersionMatch ? `${runtimeVersionMatch[1]}.${runtimeVersionMatch[2]}` : null;
+
+          for (const device of devices ?? []) {
+            if (!device || typeof device.name !== 'string' || typeof device.udid !== 'string') {
+              continue;
+            }
+
+            if (device.isAvailable === false) {
+              continue;
+            }
+
+            if (device.state && typeof device.state === 'string' && device.state.toLowerCase() === 'creating') {
+              continue;
+            }
+
+            if (device.name.toLowerCase() !== normalizedName) {
+              continue;
+            }
+
+            if (osVersion && runtimeVersion) {
+              if (osVersion === runtimeVersion) {
+                return { id: device.udid, osVersion: runtimeVersion };
+              }
+
+              if (!bestMatch) {
+                bestMatch = { id: device.udid, osVersion: runtimeVersion };
+              }
+              continue;
+            }
+
+            if (!bestMatch) {
+              bestMatch = runtimeVersion
+                ? { id: device.udid, osVersion: runtimeVersion }
+                : { id: device.udid };
+            }
+          }
+        }
+
+        if (bestMatch) {
+          return bestMatch;
+        }
+      }
+    } catch (error) {
+      Logger.warn(`Failed to query simulator list: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    try {
+      const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        execFile('xcrun', ['simctl', 'list', 'devices'], (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve({ stdout, stderr });
+          }
+        });
+      });
+
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`^\\s*${escapedName} \\(([0-9A-F-]+)\\)`, 'mi');
+      const match = stdout.match(regex);
+      if (match && match[1]) {
+        return { id: match[1] };
+      }
+    } catch (error) {
+      Logger.warn(`Failed to parse textual simulator list: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return null;
+  }
+
+  private static async _getSchemesViaXcodebuild(
+    projectFlag: '-workspace' | '-project',
+    containerPath: string
+  ): Promise<string[]> {
+    return await new Promise(resolve => {
+      const args = ['-list', projectFlag, containerPath];
+      const child = spawn('xcodebuild', args);
+      let stdoutBuffer = '';
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', chunk => {
+        stdoutBuffer += chunk;
+      });
+      child.on('close', () => {
+        const sections = stdoutBuffer.split('Schemes:');
+        if (sections.length < 2) {
+          resolve([]);
+          return;
+        }
+        const schemesSection = sections[1] ?? '';
+        const lines = schemesSection
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0);
+        resolve(lines);
+      });
+      child.on('error', () => resolve([]));
+    });
+  }
+
+  private static async _resolveSchemeName(
+    projectFlag: '-workspace' | '-project',
+    containerPath: string,
+    requestedScheme: string
+  ): Promise<{ ok: true; schemeName: string } | { ok: false; result: McpResult }> {
+    const availableSchemes = await this._getSchemesViaXcodebuild(projectFlag, containerPath);
+
+    if (availableSchemes.length === 0) {
+      return {
+        ok: false,
+        result: {
+          content: [{
+            type: 'text',
+            text: `❌ No shared schemes found when inspecting ${basename(containerPath)}.\n\nMake sure the scheme is shared (Product → Scheme → Manage Schemes… → "Shared") and try again.`
+          }]
+        }
+      };
+    }
+
+    const exact = availableSchemes.find(name => name === requestedScheme);
+    if (exact) {
+      return { ok: true, schemeName: exact };
+    }
+
+    const caseInsensitive = availableSchemes.find(name => name.toLowerCase() === requestedScheme.toLowerCase());
+    if (caseInsensitive) {
+      Logger.debug(`Resolved scheme '${requestedScheme}' to '${caseInsensitive}' (case-insensitive match)`);
+      return { ok: true, schemeName: caseInsensitive };
+    }
+
+    const bestMatch = ParameterNormalizer.findBestMatch(requestedScheme, availableSchemes);
+    let message = `❌ Scheme '${requestedScheme}' not found.`;
+    message += '\n\nAvailable schemes:\n';
+    for (const scheme of availableSchemes) {
+      if (scheme === bestMatch) {
+        message += `  • ${scheme} ← Did you mean this?\n`;
+      } else {
+        message += `  • ${scheme}\n`;
+      }
+    }
+
+    return {
+      ok: false,
+      result: {
+        content: [{ type: 'text', text: message }]
+      }
+    };
+  }
+
+  private static _hasArgument(args: string[], flag: string): boolean {
+    return args.some(entry => {
+      if (entry === flag) {
+        return true;
+      }
+      if (entry.startsWith(`${flag}=`) || entry.startsWith(`${flag} `) || entry.startsWith(`${flag}:`)) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  private static async _createTemporaryResultBundlePath(prefix: string): Promise<string> {
+    const root = join(tmpdir(), 'xcodemcp-test-results');
+    await mkdir(root, { recursive: true });
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const bundlePath = join(root, `${prefix}-${uniqueSuffix}.xcresult`);
+    try {
+      await rm(bundlePath, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors; the file will be overwritten by xcodebuild
+    }
+    return bundlePath;
+  }
+
+  private static simulatorPreferenceCache: {
+    loaded: boolean;
+    data: Record<string, { udid: string; name?: string; runtimeVersion?: string; updatedAt: number }>;
+  } = { loaded: false, data: {} };
+
+  private static _buildSimulatorPreferenceKey(platform: string, deviceType: string, osVersion: string | null): string {
+    const normalizedPlatform = platform.toLowerCase().replace(/\s+/g, '-');
+    const normalizedDevice = deviceType.toLowerCase().replace(/\s+/g, '-');
+    const normalizedOs = osVersion ? osVersion.toLowerCase() : 'any';
+    return `${normalizedPlatform}:${normalizedDevice}:${normalizedOs}`;
+  }
+
+  private static _getSimulatorPreferenceFile(): { dir: string; file: string } {
+    const dir = join(homedir(), 'Library', 'Application Support', 'XcodeMCP');
+    const file = join(dir, 'simulator-preferences.json');
+    return { dir, file };
+  }
+
+  private static async _loadSimulatorPreferences(): Promise<Record<string, { udid: string; name?: string; runtimeVersion?: string; updatedAt: number }>> {
+    if (this.simulatorPreferenceCache.loaded) {
+      return this.simulatorPreferenceCache.data;
+    }
+
+    const { file } = this._getSimulatorPreferenceFile();
+    try {
+      const content = await readFile(file, 'utf8');
+      const parsed = JSON.parse(content);
+      if (parsed && typeof parsed === 'object') {
+        this.simulatorPreferenceCache = {
+          loaded: true,
+          data: parsed as Record<string, { udid: string; name?: string; runtimeVersion?: string; updatedAt: number }>,
+        };
+        return this.simulatorPreferenceCache.data;
+      }
+    } catch {
+      // Ignore missing or invalid preference files
+    }
+
+    this.simulatorPreferenceCache = { loaded: true, data: {} };
+    return this.simulatorPreferenceCache.data;
+  }
+
+  private static async _rememberSimulatorSelection(
+    key: string,
+    value: { udid: string; name?: string; runtimeVersion?: string },
+  ): Promise<void> {
+    const preferences = await this._loadSimulatorPreferences();
+    const entry: { udid: string; name?: string; runtimeVersion?: string; updatedAt: number } = {
+      udid: value.udid,
+      updatedAt: Date.now(),
+    };
+    if (value.name) {
+      entry.name = value.name;
+    }
+    if (value.runtimeVersion) {
+      entry.runtimeVersion = value.runtimeVersion;
+    }
+    preferences[key] = entry;
+
+    const { dir, file } = this._getSimulatorPreferenceFile();
+    await mkdir(dir, { recursive: true });
+    await writeFile(file, JSON.stringify(preferences, null, 2), 'utf8');
+    this.simulatorPreferenceCache = { loaded: true, data: preferences };
+  }
+
+  private static _versionScore(version: string): number {
+    const parts = version.split('.').map(part => parseInt(part, 10)).filter(n => !Number.isNaN(n));
+    const [major = 0, minor = 0, patch = 0] = parts;
+    return major * 10000 + minor * 100 + patch;
+  }
+
+  private static _runtimeMatchesRequested(runtime: string, requested: string): boolean {
+    const normalizedRequested = requested.trim().toLowerCase();
+    const normalizedRuntime = runtime.trim().toLowerCase();
+    if (normalizedRuntime === normalizedRequested) {
+      return true;
+    }
+    return normalizedRuntime.startsWith(`${normalizedRequested}.`);
+  }
+
+  private static _scoreSimulatorCandidate(
+    candidate: { runtimeVersion: string | null; name: string; state: string },
+    requestedVersion: string | null,
+  ): number {
+    const base = candidate.runtimeVersion ? this._versionScore(candidate.runtimeVersion) : 0;
+    const idleBonus = candidate.state.toLowerCase() === 'booted' ? -50 : 10;
+    const matchBonus = requestedVersion && candidate.runtimeVersion
+      ? (this._runtimeMatchesRequested(candidate.runtimeVersion, requestedVersion) ? 100 : 0)
+      : 0;
+    const deviceBonus = candidate.name.toLowerCase().includes('pro') ? 1 : 0;
+    return base + idleBonus + matchBonus + deviceBonus;
+  }
+
+  private static _extractRuntimeVersion(runtimeIdentifier: string): string | null {
+    const match = runtimeIdentifier.match(/-(\d+)(?:-(\d+))?(?:-(\d+))?/);
+    if (!match) {
+      return null;
+    }
+    const major = match[1] ?? '0';
+    const minor = match[2] ?? '0';
+    const patch = match[3];
+    const components = [major, minor, patch].filter((component): component is string => typeof component === 'string' && component.length > 0);
+    return components.map(component => component.replace(/^0+/, '') || '0').join('.');
+  }
+
+  private static _platformForRuntime(runtimeIdentifier: string):
+    | 'iOS Simulator'
+    | 'watchOS Simulator'
+    | 'tvOS Simulator'
+    | 'visionOS Simulator'
+    | null {
+    if (runtimeIdentifier.includes('iOS')) {
+      return 'iOS Simulator';
+    }
+    if (runtimeIdentifier.includes('watchOS')) {
+      return 'watchOS Simulator';
+    }
+    if (runtimeIdentifier.includes('tvOS')) {
+      return 'tvOS Simulator';
+    }
+    if (runtimeIdentifier.includes('visionOS')) {
+      return 'visionOS Simulator';
+    }
+    return null;
+  }
+
+  private static async _getSimulatorInventory(): Promise<
+    Array<{
+      name: string;
+      udid: string;
+      platform: 'iOS Simulator' | 'watchOS Simulator' | 'tvOS Simulator' | 'visionOS Simulator';
+      runtimeIdentifier: string;
+      runtimeVersion: string | null;
+      state: string;
+      isAvailable: boolean;
+    }>
+  > {
+    try {
+      const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        execFile('xcrun', ['simctl', 'list', 'devices', '--json'], (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve({ stdout, stderr });
+          }
+        });
+      });
+
+      const parsed = JSON.parse(stdout) as {
+        devices?: Record<string, Array<{ name: string; udid: string; isAvailable?: boolean; availability?: string; state?: string }>>;
+      };
+
+      const inventory: Array<{
+        name: string;
+        udid: string;
+        platform: 'iOS Simulator' | 'watchOS Simulator' | 'tvOS Simulator' | 'visionOS Simulator';
+        runtimeIdentifier: string;
+        runtimeVersion: string | null;
+        state: string;
+        isAvailable: boolean;
+      }> = [];
+
+      for (const [runtimeIdentifier, devices] of Object.entries(parsed.devices ?? {})) {
+        const platform = this._platformForRuntime(runtimeIdentifier);
+        if (!platform) {
+          continue;
+        }
+
+        const runtimeVersion = this._extractRuntimeVersion(runtimeIdentifier);
+
+        for (const device of devices ?? []) {
+          if (!device || typeof device.name !== 'string' || typeof device.udid !== 'string') {
+            continue;
+          }
+          const isAvailable = device.isAvailable !== false && (!device.availability || !device.availability.includes('unavailable'));
+          inventory.push({
+            name: device.name,
+            udid: device.udid,
+            platform,
+            runtimeIdentifier,
+            runtimeVersion,
+            state: typeof device.state === 'string' ? device.state : 'Unknown',
+            isAvailable,
+          });
+        }
+      }
+
+      return inventory;
+    } catch (error) {
+      Logger.warn(`Failed to query simulator list: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  }
+
+  private static _detectSimulatorCloneFailure(output: string): { matched: boolean; deviceName?: string } {
+    if (!output || output.trim().length === 0) {
+      return { matched: false };
+    }
+
+    const match = output.match(/Failed to clone device named '([^']+)'/);
+    if (match && match[1]) {
+      return { matched: true, deviceName: match[1] };
+    }
+
+    return { matched: false };
   }
 
   /**
@@ -1601,3 +2391,5 @@ export class BuildTools {
     }
   }
 }
+
+export default BuildTools;

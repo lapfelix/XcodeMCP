@@ -213,6 +213,8 @@ export class Logger {
   }
 }
 
+export default Logger;
+
 // Ensure proper cleanup on process exit
 process.on('exit', async () => {
   await Logger.flush();

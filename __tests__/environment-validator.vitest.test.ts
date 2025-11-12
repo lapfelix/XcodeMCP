@@ -7,7 +7,14 @@ import type { EnvironmentValidation, EnvironmentValidationResult } from '../src/
 
 // Mock the child_process module
 vi.mock('child_process', () => ({
-  spawn: vi.fn()
+  spawn: vi.fn(),
+  execFile: vi.fn((...args: any[]) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : undefined;
+    if (callback) {
+      callback(null, '', '');
+    }
+    return { pid: 123 };
+  }),
 }));
 
 // Mock fs module

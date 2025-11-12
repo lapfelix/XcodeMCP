@@ -71,10 +71,6 @@ vi.mock('../src/utils/EnvironmentValidator.js', () => {
 });
 
 // Mock external dependencies that we don't want to actually call in tests
-vi.mock('child_process', () => ({
-  spawn: vi.fn()
-}));
-
 vi.mock('fs', () => ({
   existsSync: vi.fn().mockImplementation((path: string) => {
     // Only return true for specific test files that are supposed to exist
@@ -118,70 +114,80 @@ vi.mock('fs/promises', () => ({
 
 // Mock path validation with proper validation logic
 vi.mock('../src/utils/PathValidator.js', () => {
+  const mockPathValidator = {
+    validateProjectPath: vi.fn().mockImplementation((path: string) => {
+      if (
+        !path ||
+        path === '' ||
+        path.includes('/invalid/') ||
+        path.endsWith('.txt') ||
+        path.includes('/nonexistent/')
+      ) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Invalid project path. Must be a .xcodeproj or .xcworkspace file.',
+            },
+          ],
+        };
+      }
+      return null;
+    }),
+    validateFilePath: vi.fn().mockImplementation((path: string) => {
+      if (
+        !path ||
+        path === '' ||
+        path.includes('/invalid/') ||
+        path.endsWith('.txt') ||
+        path.includes('/nonexistent/')
+      ) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Invalid project path. Must be a .xcodeproj or .xcworkspace file.',
+            },
+          ],
+        };
+      }
+      return null;
+    }),
+  };
   return {
-    PathValidator: {
-      validateProjectPath: vi.fn().mockImplementation((path: string) => {
-        // Return error for invalid paths
-        if (!path || path === '' || 
-            path.includes('/invalid/') || 
-            path.endsWith('.txt') || 
-            path.includes('/nonexistent/')) {
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: 'Invalid project path. Must be a .xcodeproj or .xcworkspace file.' 
-            }] 
-          };
-        }
-        // Return null for valid paths
-        return null;
-      }),
-      validateFilePath: vi.fn().mockImplementation((path: string) => {
-        // Return error for invalid file paths
-        if (!path || path === '' || 
-            path.includes('/invalid/') || 
-            path.endsWith('.txt') || 
-            path.includes('/nonexistent/')) {
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: 'Invalid project path. Must be a .xcodeproj or .xcworkspace file.' 
-            }] 
-          };
-        }
-        // Return null for valid paths
-        return null;
-      })
-    }
+    PathValidator: mockPathValidator,
+    default: mockPathValidator,
   };
 });
 
 // Mock BuildLogParser 
 vi.mock('../src/utils/BuildLogParser.js', () => {
-  return {
-    BuildLogParser: {
-      parseBuildOutput: vi.fn().mockResolvedValue({
-        summary: { warnings: 0, errors: 0, tests: 0, passed: 0, failed: 0 },
-        issues: []
-      }),
-      getLatestBuildLog: vi.fn().mockResolvedValue({
+  const mockBuildLogParser = {
+    parseBuildOutput: vi.fn().mockResolvedValue({
+      summary: { warnings: 0, errors: 0, tests: 0, passed: 0, failed: 0 },
+      issues: [],
+    }),
+    getLatestBuildLog: vi.fn().mockResolvedValue({
+      path: '/mock/path/to/build.log',
+      mtime: new Date(Date.now() + 1000),
+    }),
+    findProjectDerivedData: vi.fn().mockResolvedValue('/mock/derived/data'),
+    parseBuildLog: vi.fn().mockResolvedValue({
+      summary: { warnings: 0, errors: 0, tests: 0, passed: 0, failed: 0 },
+      issues: [],
+      errors: [],
+      warnings: [],
+    }),
+    getRecentBuildLogs: vi.fn().mockResolvedValue([
+      {
         path: '/mock/path/to/build.log',
-        mtime: new Date(Date.now() + 1000) // Always newer than build start time
-      }),
-      findProjectDerivedData: vi.fn().mockResolvedValue('/mock/derived/data'),
-      parseBuildLog: vi.fn().mockResolvedValue({
-        summary: { warnings: 0, errors: 0, tests: 0, passed: 0, failed: 0 },
-        issues: [],
-        errors: [], // Important: empty errors array so parse is considered successful
-        warnings: []
-      }),
-      getRecentBuildLogs: vi.fn().mockResolvedValue([
-        {
-          path: '/mock/path/to/build.log',
-          mtime: new Date(Date.now() + 1000)
-        }
-      ])
-    }
+        mtime: new Date(Date.now() + 1000),
+      },
+    ]),
+  };
+  return {
+    BuildLogParser: mockBuildLogParser,
+    default: mockBuildLogParser,
   };
 });
 
@@ -190,8 +196,7 @@ let isLargeOutputTest = false;
 
 // Mock XCResultTool command execution - simplified for now
 vi.mock('../src/tools/XCResultTools.js', () => {
-  return {
-    XCResultTools: {
+  const mockXCResultTools = {
       getBrowseHandler: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'Mock XCResult data' }] }),
       getConsoleHandler: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'Mock console output' }] }),
       getScreenshotHandler: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'Mock screenshot' }] }),
@@ -287,7 +292,10 @@ vi.mock('../src/tools/XCResultTools.js', () => {
         }
         return { content: [{ type: 'text', text }] };
       })
-    }
+  };
+  return {
+    XCResultTools: mockXCResultTools,
+    default: mockXCResultTools,
   };
 });
 
@@ -302,6 +310,10 @@ vi.mock('../src/utils/ParameterNormalizer.js', () => {
         return name;
       }),
       normalizeDestinationName: vi.fn().mockImplementation((dest: string) => dest || 'Default Destination'),
+      getDestinationNameCandidates: vi.fn().mockImplementation((dest: string) => {
+        const normalized = dest || 'Default Destination';
+        return [normalized];
+      }),
       findBestMatch: vi.fn().mockImplementation((input: string, options: string[]) => {
         if (!input || !options.length) return null;
         return options.find(opt => opt.toLowerCase().includes(input.toLowerCase())) || options[0];
@@ -312,15 +324,17 @@ vi.mock('../src/utils/ParameterNormalizer.js', () => {
 
 // Mock ErrorHelper
 vi.mock('../src/utils/ErrorHelper.js', () => {
+  const mockErrorHelper = {
+    parseCommonErrors: vi.fn().mockReturnValue(null),
+    createErrorWithGuidance: vi.fn().mockImplementation(
+      (error: string, guidance?: string) => `${error}${guidance ? '\n\n' + guidance : ''}`,
+    ),
+    getSchemeNotFoundGuidance: vi.fn().mockReturnValue('Try checking available schemes'),
+    getDestinationNotFoundGuidance: vi.fn().mockReturnValue('Try checking available destinations'),
+  };
   return {
-    ErrorHelper: {
-      parseCommonErrors: vi.fn().mockReturnValue(null),
-      createErrorWithGuidance: vi.fn().mockImplementation((error: string, guidance?: string) => 
-        `${error}${guidance ? '\n\n' + guidance : ''}`
-      ),
-      getSchemeNotFoundGuidance: vi.fn().mockReturnValue('Try checking available schemes'),
-      getDestinationNotFoundGuidance: vi.fn().mockReturnValue('Try checking available destinations')
-    }
+    ErrorHelper: mockErrorHelper,
+    default: mockErrorHelper,
   };
 });
 

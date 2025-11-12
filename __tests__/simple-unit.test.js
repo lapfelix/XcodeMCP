@@ -3,10 +3,20 @@ import { jest } from '@jest/globals';
 // Mock dependencies
 jest.mock('child_process', () => ({
   spawn: jest.fn().mockReturnValue({
-    stdout: { on: jest.fn() },
-    stderr: { on: jest.fn() },
-    on: jest.fn()
-  })
+    stdout: { on: jest.fn(), pipe: jest.fn() },
+    stderr: { on: jest.fn(), pipe: jest.fn() },
+    on: jest.fn(),
+    kill: jest.fn(),
+    exitCode: null,
+    killed: false,
+  }),
+  execFile: jest.fn((...args) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : undefined;
+    if (callback) {
+      callback(null, '', '');
+    }
+    return { pid: 123 };
+  }),
 }));
 
 jest.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
@@ -91,7 +101,7 @@ describe('XcodeMCPServer Basic Tests', () => {
     
     // Test that methods exist and can be called (though they will fail without proper mocking)
     expect(() => server.openProject('/test/path')).not.toThrow();
-    expect(() => server.build()).not.toThrow();
+    expect(() => server.build('/test/path', 'Debug', null, 'Simple unit smoke')).not.toThrow();
     expect(() => server.clean()).not.toThrow();
   });
 });

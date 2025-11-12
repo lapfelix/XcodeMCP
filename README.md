@@ -11,8 +11,10 @@ Model Context Protocol (MCP) server that controls Xcode directly through JavaScr
 - Opens projects, builds, runs, tests, and debugs from within Xcode
 - Parses build logs with precise error locations using [XCLogParser](https://github.com/MobileNativeFoundation/XCLogParser)
 - Provides comprehensive environment validation and health checks
+- Adds simulator tooling: list/boot/shutdown, capture live logs, grab screenshots, and drive UI automation with [AXe](https://github.com/cameroncooke/axe) without touching the `xcodebuild` CLI
 - Supports graceful degradation when optional dependencies are missing
 - **NEW**: Includes a full-featured CLI with 100% MCP server feature parity
+- **NEW**: Coordinates multi-worker build queues with exclusive locks and explicit release commands
 
 ## Requirements
 
@@ -148,7 +150,12 @@ npm install -g xcodemcp
 xcodecontrol --help
 
 # Run a tool with flags  
-xcodecontrol build --xcodeproj /path/to/Project.xcodeproj --scheme MyScheme
+xcodecontrol build \
+  --xcodeproj /path/to/Project.xcodeproj \
+  --scheme MyScheme \
+  --reason "Working on onboarding flow"
+# Run tests and wait for completion (default)
+xcodecontrol test --xcodeproj /path/to/Project.xcodeproj --scheme MyScheme --device-type iphone --os-version 18.0
 
 # Get help for a specific tool
 xcodecontrol build --help
@@ -159,6 +166,82 @@ xcodecontrol build --json-input '{"xcodeproj": "/path/to/Project.xcodeproj", "sc
 # Output results in JSON format
 xcodecontrol --json health-check
 ```
+
+### Simulator & UI Automation Tools
+
+XcodeMCP now includes simulator management and UI automation commands that do **not** rely on `xcodebuild`. Everything runs through the existing JXA powered `xcode_build_and_run` workflow, so you can boot, launch, and interact with the simulator from the same toolchain.
+
+> **Note:** UI automation commands use [AXe](https://github.com/cameroncooke/axe). Install it with `brew install cameroncooke/axe/axe` or set the `XCODEMCP_AXE_PATH` environment variable to an existing binary.
+
+```bash
+# List and boot simulators
+xcodecontrol list-sims
+xcodecontrol boot-sim --simulator-uuid "<UUID>"
+xcodecontrol open-sim
+
+# Capture a screenshot from the currently booted simulator
+xcodecontrol screenshot --save-path /tmp/screenshot.png
+
+# Drive the UI with AXe (describe → tap → type)
+xcodecontrol describe-ui --simulator-uuid "<UUID>"
+xcodecontrol tap --simulator-uuid "<UUID>" --x 180 --y 420
+xcodecontrol type-text --simulator-uuid "<UUID>" --text "Hello world!"
+```
+
+These tools are also available through any MCP client. Refer to `xcode_list_sims`, `xcode_boot_sim`, `xcode_describe_ui`, `xcode_tap`, `xcode_type_text`, `xcode_swipe`, and `xcode_screenshot` in your client's tool list.
+
+### Exclusive Build Locks
+
+Build- and run-style commands now coordinate through a shared lock directory (default: `~/Library/Application Support/XcodeMCP/locks`). Every time you run `xcodecontrol build` or `xcodecontrol build-and-run`, you **must** supply a short `--reason` that summarizes the part of the app you're touching. The command will wait (via file system events, no busy polling) until it's your turn, then print a footer reminding you to release the lock when you're finished inspecting logs or simulator state.
+
+```bash
+# Acquire the lock and build
+xcodecontrol build \
+  --xcodeproj /path/to/App.xcodeproj \
+  --scheme Debug \
+  --reason "Tweaking settings tab navigation"
+
+# Once you've finished reviewing the results, release your slot
+xcodecontrol release-lock --xcodeproj /path/to/App.xcodeproj
+
+# Emergency: clear every outstanding lock (CLI-only safety valve)
+xcodecontrol release-all-locks
+```
+
+The same release command is exposed to MCP clients as `xcode_release_lock`. Locks are represented as YAML files per project/workspace so multiple workers (or multiple MCP servers) can coordinate safely across processes and sandboxes.
+
+### Inspect Build & Run Logs
+
+Each `xcode_build` / `build-and-run` command now reports a **Log ID** and filesystem path for the associated `.xcactivitylog`. Use the new viewer to inspect it (optionally while the build is still running):
+
+```bash
+# Show the exact log returned by your last build command
+xcodecontrol view-build-log --log-id "<LOG_ID_FROM_BUILD>"
+
+# Or grab the latest log for a project/workspace and filter for errors
+xcodecontrol view-build-log \
+  --xcodeproj /Users/me/ManabiReader/ManabiReader.xcodeproj \
+  --filter "error" \
+  --max-lines 200
+
+# Match multiple patterns with glob syntax (case-insensitive by default)
+xcodecontrol view-build-log \
+  --log-id "<LOG_ID>" \
+  --filter-globs "*error*,*warning*,type-check failed"
+
+# Resume where you left off using the cursor returned from the previous command
+xcodecontrol view-build-log --log-id "<LOG_ID>" --cursor "<CURSOR>" --filter "warning"
+
+# Use regex / case-sensitive filters if needed
+xcodecontrol view-build-log --log-id "<LOG_ID>" --filter "The compiler.*type-check" --filter-regex --case-sensitive
+
+# Inspect the runtime console log (same filters & cursor support)
+xcodecontrol build-and-run --xcodeproj ... --scheme ...
+# ...after it finishes:
+xcodecontrol view-run-log --log-id "<LOG_ID_FROM_RUN_SECTION>" --filter-globs "*# DETENTS*"
+```
+
+These are exposed as the `xcode_view_build_log` and `xcode_view_run_log` MCP tools (`filter_globs` accepts an array of glob expressions).
 
 ### Path Resolution
 
@@ -226,12 +309,11 @@ CLI commands use kebab-case instead of underscores:
 - `xcode_build_and_run` → `build-and-run`
 - `xcode_health_check` → `health-check`
 - `xcresult_browse` → `xcresult-browse`
-- `find_xcresults` → `find-xcresults`
+- `xcode_find_xcresults` → `find-xcresults`
 
 ## Available Tools
 
 **Project Management:**
-- `xcode_open_project` - Open projects and workspaces
 - `xcode_get_workspace_info` - Get workspace status and details
 - `xcode_get_projects` - List projects in workspace
 - `xcode_open_file` - Open files with optional line number
@@ -241,7 +323,6 @@ CLI commands use kebab-case instead of underscores:
 - `xcode_clean` - Clean build artifacts
 - `xcode_test` - Run tests with optional arguments
 - `xcode_build_and_run` - Build and run the active scheme
-- `xcode_debug` - Start debugging session
 - `xcode_stop` - Stop current operation
 
 **Configuration:**

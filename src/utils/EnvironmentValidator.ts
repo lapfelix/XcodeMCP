@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
+import { readdir, stat } from 'fs/promises';
 import { platform } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -535,10 +536,22 @@ export class EnvironmentValidator {
   public static async createHealthCheckReport(): Promise<string> {
     const results = await this.validateEnvironment();
     const version = this.getVersion();
+    const metadata = await this.getBuildMetadata();
+    const metadataLines: string[] = [];
+    if (metadata.buildTimestamp) {
+      metadataLines.push(`Build artifacts last updated: ${metadata.buildTimestamp.toISOString()}`);
+    }
+    if (metadata.latestSourceChange) {
+      metadataLines.push(`Latest TypeScript source change: ${metadata.latestSourceChange.toISOString()}`);
+    }
+    if (metadataLines.length > 0) {
+      metadataLines.push('');
+    }
     const report = [
       `XcodeMCP Configuration Health Check (v${version})`,
       '='.repeat(50),
       '',
+      ...metadataLines,
       this.generateValidationSummary(results),
       ''
     ];
@@ -581,5 +594,67 @@ export class EnvironmentValidator {
     }
 
     return report.join('\n');
+  }
+
+  private static async getBuildMetadata(): Promise<{
+    buildTimestamp?: Date;
+    latestSourceChange?: Date;
+  }> {
+    try {
+      const __filename = fileURLToPath(import.meta.url);
+      const rootDir = path.resolve(path.dirname(__filename), '..', '..');
+      const distDir = path.join(rootDir, 'dist');
+      const srcDir = path.join(rootDir, 'src');
+
+      const buildTimestamp = await this.getLatestFileMTime(distDir);
+      const latestSourceChange = await this.getLatestFileMTime(
+        srcDir,
+        filePath => filePath.endsWith('.ts') || filePath.endsWith('.tsx'),
+      );
+
+      const metadata: { buildTimestamp?: Date; latestSourceChange?: Date } = {};
+      if (buildTimestamp) {
+        metadata.buildTimestamp = buildTimestamp;
+      }
+      if (latestSourceChange) {
+        metadata.latestSourceChange = latestSourceChange;
+      }
+      return metadata;
+    } catch {
+      return {};
+    }
+  }
+
+  private static async getLatestFileMTime(
+    directory: string,
+    predicate?: (filePath: string) => boolean,
+  ): Promise<Date | undefined> {
+    try {
+      const entries = await readdir(directory, { withFileTypes: true });
+      let latest: Date | undefined;
+
+      for (const entry of entries) {
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          const childLatest = await this.getLatestFileMTime(fullPath, predicate);
+          if (childLatest && (!latest || childLatest > latest)) {
+            latest = childLatest;
+          }
+        } else if (!predicate || predicate(fullPath)) {
+          try {
+            const stats = await stat(fullPath);
+            if (!latest || stats.mtime > latest) {
+              latest = stats.mtime;
+            }
+          } catch {
+            // Ignore files we can't stat
+          }
+        }
+      }
+
+      return latest;
+    } catch {
+      return undefined;
+    }
   }
 }

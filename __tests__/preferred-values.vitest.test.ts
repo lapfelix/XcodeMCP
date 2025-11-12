@@ -12,6 +12,7 @@ describe('Preferred Values', () => {
       const buildTool = tools.find(t => t.name === 'xcode_build');
       expect(buildTool).toBeDefined();
       expect(buildTool!.inputSchema.required).not.toContain('xcodeproj');
+      expect(buildTool!.inputSchema.required).toContain('reason');
       expect(buildTool!.inputSchema.properties.xcodeproj.description).toContain('defaults to MyApp.xcodeproj');
     });
 
@@ -23,6 +24,7 @@ describe('Preferred Values', () => {
       const buildTool = tools.find(t => t.name === 'xcode_build');
       expect(buildTool).toBeDefined();
       expect(buildTool!.inputSchema.required).not.toContain('scheme');
+      expect(buildTool!.inputSchema.required).toContain('reason');
       expect(buildTool!.inputSchema.properties.scheme.description).toContain('defaults to MyAppScheme');
     });
 
@@ -34,7 +36,7 @@ describe('Preferred Values', () => {
       
       const buildTool = tools.find(t => t.name === 'xcode_build');
       expect(buildTool).toBeDefined();
-      expect(buildTool!.inputSchema.required).toEqual([]);
+      expect(buildTool!.inputSchema.required).toEqual(['reason']);
       expect(buildTool!.inputSchema.properties.xcodeproj.description).toContain('defaults to MyApp.xcodeproj');
       expect(buildTool!.inputSchema.properties.scheme.description).toContain('defaults to MyAppScheme');
     });
@@ -44,6 +46,7 @@ describe('Preferred Values', () => {
       
       const buildTool = tools.find(t => t.name === 'xcode_build');
       expect(buildTool).toBeDefined();
+      expect(buildTool!.inputSchema.required).toContain('reason');
       expect(buildTool!.inputSchema.required).toContain('xcodeproj');
       expect(buildTool!.inputSchema.required).toContain('scheme');
       expect(buildTool!.inputSchema.properties.xcodeproj.description).not.toContain('defaults to');
@@ -56,16 +59,14 @@ describe('Preferred Values', () => {
       });
       
       const toolsWithXcodeproj = [
-        'xcode_open_project',
-        'xcode_close_project',
         'xcode_build',
         'xcode_get_schemes',
         'xcode_set_active_scheme',
         'xcode_test',
         'xcode_build_and_run',
-        'xcode_debug',
+        'xcode_release_lock',
         'xcode_stop',
-        'find_xcresults',
+        'xcode_find_xcresults',
         'xcode_get_run_destinations',
         'xcode_get_workspace_info',
         'xcode_get_projects'
@@ -160,17 +161,17 @@ describe('Preferred Values', () => {
       // No preferred values - both required
       let tools = getToolDefinitions({});
       let buildTool = tools.find(t => t.name === 'xcode_build');
-      expect(buildTool!.inputSchema.required).toEqual(['xcodeproj', 'scheme']);
+      expect(buildTool!.inputSchema.required).toEqual(['reason', 'xcodeproj', 'scheme']);
 
       // Only preferred xcodeproj - scheme still required
       tools = getToolDefinitions({ preferredXcodeproj: 'MyApp.xcodeproj' });
       buildTool = tools.find(t => t.name === 'xcode_build');
-      expect(buildTool!.inputSchema.required).toEqual(['scheme']);
+      expect(buildTool!.inputSchema.required).toEqual(['reason', 'scheme']);
 
       // Only preferred scheme - xcodeproj still required
       tools = getToolDefinitions({ preferredScheme: 'MyScheme' });
       buildTool = tools.find(t => t.name === 'xcode_build');
-      expect(buildTool!.inputSchema.required).toEqual(['xcodeproj']);
+      expect(buildTool!.inputSchema.required).toEqual(['reason', 'xcodeproj']);
 
       // Both preferred - nothing required
       tools = getToolDefinitions({ 
@@ -178,22 +179,22 @@ describe('Preferred Values', () => {
         preferredScheme: 'MyScheme'
       });
       buildTool = tools.find(t => t.name === 'xcode_build');
-      expect(buildTool!.inputSchema.required).toEqual([]);
+      expect(buildTool!.inputSchema.required).toEqual(['reason']);
     });
 
     it('should correctly build required array for xcode_test', () => {
-      // No preferred values - xcodeproj and destination required
+      // No preferred values - xcodeproj and scheme required
       let tools = getToolDefinitions({});
       let testTool = tools.find(t => t.name === 'xcode_test');
-      expect(testTool!.inputSchema.required).toEqual(['xcodeproj', 'destination']);
+      expect(testTool!.inputSchema.required).toEqual(['xcodeproj', 'scheme']);
 
-      // With preferred xcodeproj - only destination required
+      // With preferred xcodeproj - only scheme required
       tools = getToolDefinitions({ preferredXcodeproj: 'MyApp.xcodeproj' });
       testTool = tools.find(t => t.name === 'xcode_test');
-      expect(testTool!.inputSchema.required).toEqual(['destination']);
+      expect(testTool!.inputSchema.required).toEqual(['scheme']);
     });
 
-    it('should correctly handle xcode_set_active_scheme', () => {
+  it('should correctly handle xcode_set_active_scheme', () => {
       // No preferred values - both required
       let tools = getToolDefinitions({});
       let schemeTool = tools.find(t => t.name === 'xcode_set_active_scheme');

@@ -32,7 +32,14 @@ jest.mock('@modelcontextprotocol/sdk/types.js', () => ({
 // Mock child_process
 const mockSpawn = jest.fn();
 jest.mock('child_process', () => ({
-  spawn: mockSpawn
+  spawn: mockSpawn,
+  execFile: jest.fn((...args) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : undefined;
+    if (callback) {
+      callback(null, '', '');
+    }
+    return { pid: 123 };
+  }),
 }));
 
 // Suppress console.error during tests
@@ -88,22 +95,22 @@ describeIfXcode('MCP Tool Handlers', () => {
       
       // Check for essential tools
       const toolNames = result.tools.map(tool => tool.name);
-      expect(toolNames).toContain('xcode_open_project');
       expect(toolNames).toContain('xcode_build');
       expect(toolNames).toContain('xcode_test');
       expect(toolNames).toContain('xcode_build_and_run');
-      expect(toolNames).toContain('xcode_debug');
+      expect(toolNames).toContain('xcode_release_lock');
     });
 
     test('should include proper tool schemas', async () => {
       const result = await listToolsHandler();
       
-      const openProjectTool = result.tools.find(tool => tool.name === 'xcode_open_project');
-      expect(openProjectTool).toHaveProperty('description');
-      expect(openProjectTool).toHaveProperty('inputSchema');
-      expect(openProjectTool.inputSchema).toHaveProperty('properties');
-      expect(openProjectTool.inputSchema.properties).toHaveProperty('path');
-      expect(openProjectTool.inputSchema.required).toContain('path');
+      const buildTool = result.tools.find(tool => tool.name === 'xcode_build');
+      expect(buildTool).toHaveProperty('description');
+      expect(buildTool).toHaveProperty('inputSchema');
+      expect(buildTool.inputSchema).toHaveProperty('properties');
+      expect(buildTool.inputSchema.properties).toHaveProperty('xcodeproj');
+      expect(buildTool.inputSchema.properties).toHaveProperty('scheme');
+      expect(buildTool.inputSchema.required).toEqual(expect.arrayContaining(['reason', 'xcodeproj', 'scheme']));
     });
 
     test('should include optional parameter tools', async () => {
@@ -113,9 +120,8 @@ describeIfXcode('MCP Tool Handlers', () => {
       expect(testTool.inputSchema.properties).toHaveProperty('commandLineArguments');
       expect(testTool.inputSchema.properties.commandLineArguments.type).toBe('array');
       
-      const debugTool = result.tools.find(tool => tool.name === 'xcode_debug');
-      expect(debugTool.inputSchema.properties).toHaveProperty('scheme');
-      expect(debugTool.inputSchema.properties).toHaveProperty('skipBuilding');
+      const runTool = result.tools.find(tool => tool.name === 'xcode_build_and_run');
+      expect(runTool.inputSchema.properties).toHaveProperty('command_line_arguments');
     });
   });
 
@@ -162,23 +168,19 @@ describeIfXcode('MCP Tool Handlers', () => {
       }
     });
 
-    test('should handle tools with parameters correctly', async () => {
-      const mockExecuteJXA = jest.fn().mockResolvedValue('Project opened successfully');
-      server.executeJXA = mockExecuteJXA;
-
+    test('should handle health check execution without parameters', async () => {
       const request = {
         params: {
-          name: 'xcode_open_project',
-          arguments: {
-            path: '/Users/test/TestProject.xcodeproj'
-          }
+          name: 'xcode_health_check',
+          arguments: {}
         }
       };
 
       const result = await callToolHandler(request);
       
-      expect(result.content[0].text).toBe('Project opened successfully');
-      expect(mockExecuteJXA).toHaveBeenCalled();
+      expect(result).toHaveProperty('content');
+      const textBlocks = result.content.filter(item => item.type === 'text');
+      expect(textBlocks.length).toBeGreaterThan(0);
     });
 
     test('should handle array parameters', async () => {
@@ -200,26 +202,6 @@ describeIfXcode('MCP Tool Handlers', () => {
       expect(mockExecuteJXA).toHaveBeenCalled();
     });
 
-    test('should handle optional parameters', async () => {
-      const mockExecuteJXA = jest.fn().mockResolvedValue('Debug started. Result ID: debug-456');
-      server.executeJXA = mockExecuteJXA;
-
-      const request = {
-        params: {
-          name: 'xcode_debug',
-          arguments: {
-            scheme: 'TestScheme',
-            skipBuilding: true
-          }
-        }
-      };
-
-      const result = await callToolHandler(request);
-      
-      expect(result.content[0].text).toBe('Debug started. Result ID: debug-456');
-      expect(mockExecuteJXA).toHaveBeenCalled();
-    });
-
     test('should propagate execution errors', async () => {
       const mockExecuteJXA = jest.fn().mockRejectedValue(new Error('JXA execution failed'));
       server.executeJXA = mockExecuteJXA;
@@ -237,18 +219,16 @@ describeIfXcode('MCP Tool Handlers', () => {
 
   describe('Tool Input Validation', () => {
     test('should handle missing required parameters gracefully', async () => {
-      const mockExecuteJXA = jest.fn();
-      server.executeJXA = mockExecuteJXA;
+      server.validateToolOperation = jest.fn().mockResolvedValue(null);
 
       const request = {
         params: {
-          name: 'xcode_open_project',
-          arguments: {} // Missing required 'path' parameter
+          name: 'xcode_build',
+          arguments: {} // Missing required xcodeproj and scheme
         }
       };
 
-      // The method should handle undefined gracefully
-      await expect(callToolHandler(request)).rejects.toThrow();
+      await expect(callToolHandler(request)).rejects.toThrow('Missing required parameter: xcodeproj');
     });
 
     test('should handle undefined optional parameters', async () => {
@@ -268,21 +248,5 @@ describeIfXcode('MCP Tool Handlers', () => {
       expect(result).toBeDefined();
     });
 
-    test('should handle boolean parameters correctly', async () => {
-      const mockExecuteJXA = jest.fn().mockResolvedValue('Debug started');
-      server.executeJXA = mockExecuteJXA;
-
-      const request = {
-        params: {
-          name: 'xcode_debug',
-          arguments: {
-            skipBuilding: false
-          }
-        }
-      };
-
-      const result = await callToolHandler(request);
-      expect(result).toBeDefined();
-    });
   });
 });

@@ -2,7 +2,7 @@ node_modules/
 CLAUDE.md
 coverage/
 .DS_Store
-dist/CLI_DISCREPANCIES.md
+dist/
 
 # MCP Registry tokens
 .mcpregistry_*

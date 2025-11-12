@@ -1,6 +1,6 @@
 import { existsSync } from 'fs';
 import path from 'path';
-import { ErrorHelper } from './ErrorHelper.js';
+import ErrorHelper from './ErrorHelper.js';
 import type { McpResult } from '../types/index.js';
 
 export class PathValidator {
@@ -108,3 +108,5 @@ export class PathValidator {
     return null;
   }
 }
+
+export default PathValidator;

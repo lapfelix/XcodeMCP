@@ -12,19 +12,31 @@ vi.mock('child_process', () => ({
           if (event === 'data') {
             callback('/Applications/Xcode.app/Contents/Developer\n');
           }
-        })
+        }),
+        pipe: vi.fn(),
       },
       stderr: {
-        on: vi.fn()
+        on: vi.fn(),
+        pipe: vi.fn(),
       },
       on: vi.fn((event, callback) => {
         if (event === 'close') {
           callback(0);
         }
-      })
+      }),
+      kill: vi.fn(),
+      exitCode: null,
+      killed: false,
     };
     return mockProcess;
-  })
+  }),
+  execFile: vi.fn((...args: any[]) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : undefined;
+    if (callback) {
+      callback(null, '', '');
+    }
+    return { pid: 123 };
+  }),
 }));
 
 // Import the tools to test

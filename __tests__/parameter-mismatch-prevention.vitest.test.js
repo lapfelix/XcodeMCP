@@ -73,7 +73,6 @@ describe('Parameter Mismatch Prevention', () => {
         { tool: 'xcode_clean', method: 'clean', args: ['args.path'] },
         { tool: 'xcode_test', method: 'test', args: ['args.path', 'args.commandLineArguments'] },
         { tool: 'xcode_build_and_run', method: 'run', args: ['args.path', 'args.commandLineArguments'] },
-        { tool: 'xcode_debug', method: 'debug', args: ['args.path', 'args.scheme', 'args.skipBuilding'] },
         { tool: 'xcode_stop', method: 'stop', args: ['args.xcodeproj'] },
         { tool: 'xcode_get_schemes', method: 'getSchemes', args: ['args.path'] },
         { tool: 'xcode_set_active_scheme', method: 'setActiveScheme', args: ['args.path', 'args.schemeName'] },

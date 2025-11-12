@@ -8,6 +8,15 @@ export class ParameterNormalizer {
     // Remove extra whitespace and normalize case
     let normalized = destination.trim();
     
+    const parsedParams = this._parseDestinationParameters(normalized);
+    if (parsedParams?.name) {
+      const capitalizedName = this._capitalizeDeviceName(parsedParams.name);
+      if (parsedParams.osVersion) {
+        return `${capitalizedName} (${parsedParams.osVersion})`;
+      }
+      return capitalizedName;
+    }
+    
     // Common destination name variations
     const destinationMappings: Record<string, string> = {
       // iPhone variants
@@ -68,6 +77,37 @@ export class ParameterNormalizer {
     return normalized;
   }
   
+  public static getDestinationNameCandidates(destination: string): string[] {
+    if (!destination || typeof destination !== 'string') {
+      return [];
+    }
+    
+    const candidates = new Set<string>();
+    const trimmed = destination.trim();
+    if (trimmed) {
+      candidates.add(trimmed);
+    }
+    
+    const normalized = this.normalizeDestinationName(destination);
+    if (normalized) {
+      candidates.add(normalized);
+    }
+    
+    const parsedParams = this._parseDestinationParameters(destination);
+    if (parsedParams?.name) {
+      const baseName = this._capitalizeDeviceName(parsedParams.name);
+      if (baseName) {
+        candidates.add(baseName);
+        
+        if (parsedParams.osVersion) {
+          candidates.add(`${baseName} (${parsedParams.osVersion})`);
+        }
+      }
+    }
+    
+    return Array.from(candidates);
+  }
+  
   public static normalizeSchemeName(schemeName: string): string {
     if (!schemeName || typeof schemeName !== 'string') {
       return schemeName;
@@ -109,6 +149,41 @@ export class ParameterNormalizer {
     }
     
     return normalized;
+  }
+  
+  private static _parseDestinationParameters(destination: string): {
+    name?: string;
+    osVersion?: string;
+  } | null {
+    if (!destination || !destination.includes('=')) {
+      return null;
+    }
+    
+    const params = destination.split(',')
+      .map(part => part.trim())
+      .map(part => part.split('=').map(token => token.trim()))
+      .filter(pair => pair.length === 2) as [string, string][];
+    
+    if (!params.length) {
+      return null;
+    }
+    
+    const parsed: { name?: string; osVersion?: string } = {};
+    for (const [rawKey, rawValue] of params) {
+      const key = rawKey.toLowerCase();
+      const value = rawValue;
+      if (!value) {
+        continue;
+      }
+      
+      if (key === 'name') {
+        parsed.name = value;
+      } else if (key === 'os' || key === 'osversion') {
+        parsed.osVersion = value.replace(/^iOS\s*/i, '').replace(/^OS\s*/i, '').trim() || value;
+      }
+    }
+    
+    return Object.keys(parsed).length ? parsed : null;
   }
   
   private static _capitalizeDeviceName(name: string): string {

@@ -1,7 +1,7 @@
 import { JXAExecutor } from '../utils/JXAExecutor.js';
-import { PathValidator } from '../utils/PathValidator.js';
+import PathValidator from '../utils/PathValidator.js';
 import { ParameterNormalizer } from '../utils/ParameterNormalizer.js';
-import { ErrorHelper } from '../utils/ErrorHelper.js';
+import ErrorHelper from '../utils/ErrorHelper.js';
 import { getWorkspaceByPathScript } from '../utils/JXAHelpers.js';
 import type { McpResult, OpenProjectCallback } from '../types/index.js';
 
@@ -546,3 +546,5 @@ export class ProjectTools {
     }
   }
 }
+
+export default ProjectTools;

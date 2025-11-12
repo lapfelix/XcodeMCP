@@ -27,25 +27,38 @@ describe('XcodeMCP Server Functional Tests', () => {
   test('should validate tool definitions completeness', () => {
     // Test the tool definitions without instantiating the class
     const expectedTools = [
-      'xcode_open_project',
-      'xcode_build', 
+      'xcode_build',
       'xcode_clean',
       'xcode_test',
       'xcode_build_and_run',
-      'xcode_debug',
+      'xcode_release_lock',
       'xcode_stop',
       'xcode_get_schemes',
       'xcode_get_run_destinations',
       'xcode_set_active_scheme',
       'xcode_get_workspace_info',
       'xcode_get_projects',
-      'xcode_open_file'
+      'xcode_open_file',
     ];
 
-    expect(expectedTools.length).toBe(13);
+    expect(expectedTools.length).toBe(12);
     expect(expectedTools).toContain('xcode_build');
     expect(expectedTools).toContain('xcode_test');
-    expect(expectedTools).toContain('xcode_build_and_run');
+    expect(expectedTools).toContain('xcode_release_lock');
+  });
+
+  test('health check output includes version metadata', async () => {
+    const { XcodeServer } = await import('../dist/XcodeServer.js');
+    const server = new XcodeServer({ includeClean: true });
+    const result = await server.callToolDirect('xcode_health_check', {});
+
+    const aggregated = (result.content ?? [])
+      .filter(item => item.type === 'text')
+      .map(item => item.text)
+      .join('\n');
+
+    expect(aggregated).toContain('XcodeMCP Version Information');
+    expect(aggregated).toMatch(/Package version:\s+.+/);
   });
 
   test('should validate JXA script generation patterns', () => {

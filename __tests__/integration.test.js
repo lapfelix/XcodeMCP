@@ -124,7 +124,7 @@ describeIfXcode('Integration Tests', () => {
       mockSpawn.mockReturnValue(mockProcess);
       
       // Step 3: Build project
-      const buildPromise = server.build('/Users/test/TestApp.xcodeproj');
+      const buildPromise = server.build('/Users/test/TestApp.xcodeproj', 'Debug', null, 'Integration workflow');
       setTimeout(() => {
         mockProcess.stdout.emit('data', '/Users/test/TestApp.xcodeproj\n');
         mockProcess.emit('close', 0);
@@ -191,7 +191,7 @@ describeIfXcode('Integration Tests', () => {
     test('should handle Xcode not running error', async () => {
       const server = new XcodeMCPServer();
       
-      const buildPromise = server.build('/Users/test/TestApp.xcodeproj');
+      const buildPromise = server.build('/Users/test/TestApp.xcodeproj', 'Debug', null, 'Integration workflow');
       setTimeout(() => {
         mockProcess.stderr.emit('data', 'Error: Application "Xcode" is not running\n');
         mockProcess.emit('close', 1);
@@ -229,7 +229,7 @@ describeIfXcode('Integration Tests', () => {
     test('should handle slow JXA execution', async () => {
       const server = new XcodeMCPServer();
       
-      const buildPromise = server.build('/Users/test/TestApp.xcodeproj');
+      const buildPromise = server.build('/Users/test/TestApp.xcodeproj', 'Debug', null, 'Integration workflow');
       
       // Simulate slow response
       setTimeout(() => {

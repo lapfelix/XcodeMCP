@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { Logger } from '../utils/Logger.js';
+import Logger from '../utils/Logger.js';
 import { EventEmitter } from 'events';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -83,34 +83,6 @@ export class McpLibrary extends EventEmitter {
     
     // Fallback to hardcoded tool definitions
     return [
-      {
-        name: 'xcode_open_project',
-        description: 'Open an Xcode project or workspace',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            xcodeproj: {
-              type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
-            },
-          },
-          required: ['xcodeproj'],
-        },
-      },
-      {
-        name: 'xcode_close_project',
-        description: 'Close the currently active Xcode project or workspace (automatically stops any running actions first)',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            xcodeproj: {
-              type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
-            },
-          },
-          required: ['xcodeproj'],
-        },
-      },
       {
         name: 'xcode_build',
         description: 'Build a specific Xcode project or workspace with the specified scheme. If destination is not provided, uses the currently active destination.',
@@ -222,28 +194,6 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcode_debug',
-        description: 'Start debugging session for a specific project',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            xcodeproj: {
-              type: 'string',
-              description: 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
-            },
-            scheme: {
-              type: 'string',
-              description: 'Scheme name (optional)',
-            },
-            skip_building: {
-              type: 'boolean',
-              description: 'Whether to skip building',
-            },
-          },
-          required: ['xcodeproj'],
-        },
-      },
-      {
         name: 'xcode_stop',
         description: 'Stop the current scheme action',
         inputSchema: {
@@ -252,7 +202,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'find_xcresults',
+        name: 'xcode_find_xcresults',
         description: 'Find all XCResult files for a specific project with timestamps and file information',
         inputSchema: {
           type: 'object',
@@ -334,7 +284,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcresult_browse',
+        name: 'xcode_xcresult_browse',
         description: 'Browse XCResult files - list all tests or show details for a specific test. Returns comprehensive test results including pass/fail status, failure details, and browsing instructions. Large console output (>20 lines or >2KB) is automatically saved to a temporary file.',
         inputSchema: {
           type: 'object',
@@ -357,7 +307,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcresult_browser_get_console',
+        name: 'xcode_xcresult_browser_get_console',
         description: 'Get console output and test activities for a specific test in an XCResult file. Large output (>20 lines or >2KB) is automatically saved to a temporary file.',
         inputSchema: {
           type: 'object',
@@ -375,7 +325,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcresult_summary',
+        name: 'xcode_xcresult_summary',
         description: 'Get a quick summary of test results from an XCResult file',
         inputSchema: {
           type: 'object',
@@ -389,7 +339,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcresult_get_screenshot',
+        name: 'xcode_xcresult_get_screenshot',
         description: 'Get screenshot from a failed test at specific timestamp - extracts frame from video attachment using ffmpeg',
         inputSchema: {
           type: 'object',
@@ -411,7 +361,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcresult_get_ui_hierarchy',
+        name: 'xcode_xcresult_get_ui_hierarchy',
         description: 'Get UI hierarchy attachment from test. Returns raw accessibility tree (best for AI), slim AI-readable JSON (default), or full JSON.',
         inputSchema: {
           type: 'object',
@@ -441,7 +391,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcresult_get_ui_element',
+        name: 'xcode_xcresult_get_ui_element',
         description: 'Get full details of a specific UI element by index from a previously exported UI hierarchy JSON file',
         inputSchema: {
           type: 'object',
@@ -463,7 +413,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcresult_list_attachments',
+        name: 'xcode_xcresult_list_attachments',
         description: 'List all attachments for a specific test - shows attachment names, types, and indices for export',
         inputSchema: {
           type: 'object',
@@ -481,7 +431,7 @@ export class McpLibrary extends EventEmitter {
         },
       },
       {
-        name: 'xcresult_export_attachment',
+        name: 'xcode_xcresult_export_attachment',
         description: 'Export a specific attachment by index - can convert App UI hierarchy attachments to JSON',
         inputSchema: {
           type: 'object',

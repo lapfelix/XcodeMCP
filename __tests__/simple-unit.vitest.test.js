@@ -3,10 +3,20 @@ import { vi, describe, test, expect, beforeAll, afterAll } from 'vitest';
 // Mock dependencies
 vi.mock('child_process', () => ({
   spawn: vi.fn().mockReturnValue({
-    stdout: { on: vi.fn() },
-    stderr: { on: vi.fn() },
-    on: vi.fn()
-  })
+    stdout: { on: vi.fn(), pipe: vi.fn() },
+    stderr: { on: vi.fn(), pipe: vi.fn() },
+    on: vi.fn(),
+    kill: vi.fn(),
+    exitCode: null,
+    killed: false,
+  }),
+  execFile: vi.fn((...args) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : undefined;
+    if (callback) {
+      callback(null, '', '');
+    }
+    return { pid: 123 };
+  }),
 }));
 
 // Mock filesystem operations
@@ -69,13 +79,10 @@ describe('XcodeMCPServer Basic Tests', () => {
     
     // List of required tools that should be available
     const requiredTools = [
-      'xcode_open_project',
-      'xcode_close_project', 
       'xcode_build',
       'xcode_clean',
       'xcode_test',
       'xcode_build_and_run',
-      'xcode_debug',
       'xcode_stop',
       'xcode_get_schemes',
       'xcode_set_active_scheme',
@@ -84,15 +91,15 @@ describe('XcodeMCPServer Basic Tests', () => {
       'xcode_get_projects',
       'xcode_open_file',
       'xcode_health_check',
-      'find_xcresults',
-      'xcresult_browse',
-      'xcresult_browser_get_console',
-      'xcresult_summary',
-      'xcresult_get_screenshot',
-      'xcresult_get_ui_hierarchy',
-      'xcresult_get_ui_element',
-      'xcresult_list_attachments',
-      'xcresult_export_attachment'
+      'xcode_find_xcresults',
+      'xcode_xcresult_browse',
+      'xcode_xcresult_browser_get_console',
+      'xcode_xcresult_summary',
+      'xcode_xcresult_get_screenshot',
+      'xcode_xcresult_get_ui_hierarchy',
+      'xcode_xcresult_get_ui_element',
+      'xcode_xcresult_list_attachments',
+      'xcode_xcresult_export_attachment'
     ];
     
     // Verify the server was created and has the expected MCP server instance

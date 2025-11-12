@@ -3,10 +3,20 @@ import { vi, describe, test, expect, beforeAll, afterAll } from 'vitest';
 // Mock dependencies
 vi.mock('child_process', () => ({
   spawn: vi.fn().mockReturnValue({
-    stdout: { on: vi.fn() },
-    stderr: { on: vi.fn() },
-    on: vi.fn()
-  })
+    stdout: { on: vi.fn(), pipe: vi.fn() },
+    stderr: { on: vi.fn(), pipe: vi.fn() },
+    on: vi.fn(),
+    kill: vi.fn(),
+    exitCode: null,
+    killed: false,
+  }),
+  execFile: vi.fn((...args: any[]) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : undefined;
+    if (callback) {
+      callback(null, '', '');
+    }
+    return { pid: 123 };
+  }),
 }));
 
 vi.mock('@modelcontextprotocol/sdk/server/index.js', () => ({

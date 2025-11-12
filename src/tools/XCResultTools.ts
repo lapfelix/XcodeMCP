@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { XCResultParser } from '../utils/XCResultParser.js';
-import { Logger } from '../utils/Logger.js';
+import Logger from '../utils/Logger.js';
 import type { McpResult, TestAttachment } from '../types/index.js';
 
 export class XCResultTools {
@@ -331,22 +331,24 @@ export class XCResultTools {
         output += 'No attachments found for this test.\n';
       } else {
         attachments.forEach((att, index) => {
-          const filename = att.name || att.filename || 'unnamed';
+          const rawFilename = att.name ?? att.filename ?? 'unnamed';
+          const filename = typeof rawFilename === 'string' ? rawFilename : String(rawFilename);
           output += `[${index + 1}] ${filename}\n`;
           
           // Determine type from identifier or filename
           let type = att.uniform_type_identifier || att.uniformTypeIdentifier || '';
           if (!type || type === 'unknown') {
             // Infer type from filename extension or special patterns
-            const ext = filename.toLowerCase().split('.').pop();
+            const lowered = filename.toLowerCase();
+            const ext = lowered.split('.').pop();
             if (ext === 'jpeg' || ext === 'jpg') type = 'public.jpeg';
             else if (ext === 'png') type = 'public.png';
             else if (ext === 'mp4') type = 'public.mpeg-4';
             else if (ext === 'mov') type = 'com.apple.quicktime-movie';
             else if (ext === 'txt') type = 'public.plain-text';
-            else if (filename.toLowerCase().includes('app ui hierarchy')) type = 'ui-hierarchy';
-            else if (filename.toLowerCase().includes('ui snapshot')) type = 'ui-snapshot';
-            else if (filename.toLowerCase().includes('synthesized event')) type = 'synthesized-event';
+            else if (lowered.includes('app ui hierarchy')) type = 'ui-hierarchy';
+            else if (lowered.includes('ui snapshot')) type = 'ui-snapshot';
+            else if (lowered.includes('synthesized event')) type = 'synthesized-event';
             else type = 'unknown';
           }
           
@@ -482,21 +484,23 @@ export class XCResultTools {
         );
       }
 
-      const filename = attachment.filename || attachment.name || `attachment_${attachmentIndex}`;
+      const rawFilename = attachment.filename ?? attachment.name ?? `attachment_${attachmentIndex}`;
+      const filename = typeof rawFilename === 'string' ? rawFilename : String(rawFilename);
       
       // Determine type from identifier or filename first
       let type = attachment.uniform_type_identifier || attachment.uniformTypeIdentifier || '';
       if (!type || type === 'unknown') {
         // Infer type from filename extension or special patterns
-        const ext = filename.toLowerCase().split('.').pop();
+        const lowered = filename.toLowerCase();
+        const ext = lowered.split('.').pop();
         if (ext === 'jpeg' || ext === 'jpg') type = 'public.jpeg';
         else if (ext === 'png') type = 'public.png';
         else if (ext === 'mp4') type = 'public.mpeg-4';
         else if (ext === 'mov') type = 'com.apple.quicktime-movie';
         else if (ext === 'txt') type = 'public.plain-text';
-        else if (filename.toLowerCase().includes('app ui hierarchy')) type = 'ui-hierarchy';
-        else if (filename.toLowerCase().includes('ui snapshot')) type = 'ui-snapshot';
-        else if (filename.toLowerCase().includes('synthesized event')) type = 'synthesized-event';
+        else if (lowered.includes('app ui hierarchy')) type = 'ui-hierarchy';
+        else if (lowered.includes('ui snapshot')) type = 'ui-snapshot';
+        else if (lowered.includes('synthesized event')) type = 'synthesized-event';
         else type = 'unknown';
       }
 
@@ -1502,7 +1506,8 @@ export class XCResultTools {
     // Filter to only image attachments
     const imageAttachments = attachments.filter(attachment => {
       const typeId = attachment.uniform_type_identifier || attachment.uniformTypeIdentifier || '';
-      const filename = attachment.filename || attachment.name || '';
+      const rawFilename = attachment.filename ?? attachment.name ?? '';
+      const filename = typeof rawFilename === 'string' ? rawFilename : String(rawFilename);
       
       return typeId.includes('png') || 
              typeId === 'public.png' || 
@@ -1552,7 +1557,8 @@ export class XCResultTools {
   private static findVideoAttachment(attachments: TestAttachment[]): TestAttachment | undefined {
     return attachments.find(attachment => {
       const typeId = attachment.uniform_type_identifier || attachment.uniformTypeIdentifier || '';
-      const filename = attachment.filename || attachment.name || '';
+      const rawFilename = attachment.filename ?? attachment.name ?? '';
+      const filename = typeof rawFilename === 'string' ? rawFilename : String(rawFilename);
       
       // Check for video type identifiers or video extensions
       return typeId.includes('mp4') || 
@@ -1677,3 +1683,5 @@ export class XCResultTools {
     });
   }
 }
+
+export default XCResultTools;

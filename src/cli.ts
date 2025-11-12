@@ -5,14 +5,10 @@ import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { XcodeServer } from './XcodeServer.js';
-import { Logger } from './utils/Logger.js';
-import { getToolDefinitions } from './shared/toolDefinitions.js';
-
-interface ToolDefinition {
-  name: string;
-  description: string;
-  inputSchema: any;
-}
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import Logger from './utils/Logger.js';
+import { getToolDefinitions, type ToolDefinition } from './shared/toolDefinitions.js';
+import LockManager from './utils/LockManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -38,13 +34,90 @@ function schemaPropertyToOption(name: string, property: any): { flags: string; d
   const dashName = name.replace(/_/g, '-');
   const flags = property.type === 'boolean' ? `--${dashName}` : `--${dashName} <value>`;
   const description = property.description || `${name} parameter`;
-  
+
   const option = { flags, description };
   if (property.default !== undefined) {
     (option as any).defaultValue = property.default;
   }
   
   return option;
+}
+
+function getArgValue(flag: string): string | undefined {
+  const equalsMatch = process.argv.find(arg => arg.startsWith(`${flag}=`));
+  if (equalsMatch) {
+    const [, value = ''] = equalsMatch.split('=');
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  const index = process.argv.indexOf(flag);
+  if (index !== -1 && process.argv.length > index + 1) {
+    const next = process.argv[index + 1];
+    if (next && !next.startsWith('-')) {
+      const trimmed = next.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
+  }
+  return undefined;
+}
+
+function hasFlag(flag: string): boolean {
+  return process.argv.includes(flag);
+}
+
+function detectError(toolName: string, result: CallToolResult | undefined): boolean {
+  if (!result) return false;
+  if (result.isError) return true;
+
+  if (!result.content || !Array.isArray(result.content)) {
+    return false;
+  }
+
+  for (const item of result.content) {
+    if (item?.type === 'text' && typeof item.text === 'string') {
+      const text = item.text;
+
+      if (toolName === 'xcode_health_check') {
+        if (text.includes('⚠️  CRITICAL ERRORS DETECTED') || text.includes('❌ OS:') || text.includes('❌ OSASCRIPT:')) {
+          return true;
+        }
+        continue;
+      }
+
+      if (toolName === 'xcode_test') {
+        if (text.includes('✅ All tests passed!')) {
+          continue;
+        }
+        if (
+          text.includes('❌ TEST BUILD FAILED') ||
+          text.includes('❌ TESTS FAILED') ||
+          text.includes('⏹️ TEST BUILD INTERRUPTED') ||
+          (/Failed:\s*(?!0)/.test(text) && !text.includes('Failed: 0'))
+        ) {
+          return true;
+        }
+        continue;
+      }
+
+      if (
+        text.includes('❌') ||
+        text.includes('does not exist') ||
+        text.includes('failed') ||
+        text.includes('error') ||
+        text.includes('Error') ||
+        text.includes('missing required parameter') ||
+        text.includes('cannot find') ||
+        text.includes('not found') ||
+        text.includes('invalid') ||
+        text.includes('Invalid')
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -126,53 +199,7 @@ async function main(): Promise<void> {
   try {
     const pkg = await loadPackageJson();
     
-    // Check for --no-clean argument early to configure both server and tools
-    const noCleanArg = process.argv.includes('--no-clean');
-    const includeClean = !noCleanArg;
-    
-    // Parse preferred values from command-line or environment
-    const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME || 
-      process.argv.find(arg => arg.startsWith('--preferred-scheme='))?.split('=')[1];
-    const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ || 
-      process.argv.find(arg => arg.startsWith('--preferred-xcodeproj='))?.split('=')[1];
-    
-    const serverOptions: {
-      includeClean: boolean;
-      preferredScheme?: string;
-      preferredXcodeproj?: string;
-    } = { includeClean };
-    
-    if (preferredScheme) serverOptions.preferredScheme = preferredScheme;
-    if (preferredXcodeproj) serverOptions.preferredXcodeproj = preferredXcodeproj;
-    
-    const server = new XcodeServer(serverOptions);
-    
-    // Get tool definitions from shared source to ensure CLI is always in sync with MCP
-    const toolOptions: {
-      includeClean: boolean;
-      preferredScheme?: string;
-      preferredXcodeproj?: string;
-    } = { includeClean };
-    
-    if (preferredScheme) toolOptions.preferredScheme = preferredScheme;
-    if (preferredXcodeproj) toolOptions.preferredXcodeproj = preferredXcodeproj;
-    
-    const tools = getToolDefinitions(toolOptions);
-    
-    // Build description with preferred values if set
-    let description = `Command-line interface for Xcode automation and control`;
-    
-    if (preferredScheme || preferredXcodeproj) {
-      description += '\n\n📌 Preferred Values:';
-      if (preferredScheme) {
-        description += `\n  • Scheme: ${preferredScheme}`;
-      }
-      if (preferredXcodeproj) {
-        description += `\n  • Project: ${preferredXcodeproj}`;
-      }
-    }
-    
-    description += `
+    let description = `Command-line interface for Xcode automation and control
 
 📁 Command Categories:
   • Project Management  - Open/close projects, manage schemes and workspaces
@@ -200,6 +227,67 @@ async function main(): Promise<void> {
       .option('--no-clean', 'Disable the clean tool', false)
       .option('--preferred-scheme <scheme>', 'Set a preferred scheme to use as default')
       .option('--preferred-xcodeproj <path>', 'Set a preferred xcodeproj/xcworkspace to use as default');
+
+    let includeClean = true;
+    let cliPreferredScheme: string | undefined;
+    let cliPreferredXcodeproj: string | undefined;
+
+    if (typeof (program as any).parseOptions === 'function') {
+      program.parseOptions(process.argv);
+      const globalOptions = program.opts();
+      includeClean = globalOptions.clean !== false;
+      if (typeof globalOptions.preferredScheme === 'string') {
+        const trimmed = globalOptions.preferredScheme.trim();
+        cliPreferredScheme = trimmed.length > 0 ? trimmed : undefined;
+      }
+      if (typeof globalOptions.preferredXcodeproj === 'string') {
+        const trimmed = globalOptions.preferredXcodeproj.trim();
+        cliPreferredXcodeproj = trimmed.length > 0 ? trimmed : undefined;
+      }
+    } else {
+      includeClean = !hasFlag('--no-clean');
+      cliPreferredScheme = getArgValue('--preferred-scheme');
+      cliPreferredXcodeproj = getArgValue('--preferred-xcodeproj');
+    }
+
+    const envPreferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME?.trim();
+    const envPreferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ?.trim();
+
+    const preferredScheme = cliPreferredScheme || envPreferredScheme;
+    const preferredXcodeproj = cliPreferredXcodeproj || envPreferredXcodeproj;
+
+    if (preferredScheme || preferredXcodeproj) {
+      description += '\n\n📌 Preferred Values:';
+      if (preferredScheme) {
+        description += `\n  • Scheme: ${preferredScheme}`;
+      }
+      if (preferredXcodeproj) {
+        description += `\n  • Project: ${preferredXcodeproj}`;
+      }
+      program.description(description);
+    }
+
+    const serverOptions: {
+      includeClean: boolean;
+      preferredScheme?: string;
+      preferredXcodeproj?: string;
+    } = { includeClean };
+
+    if (preferredScheme) serverOptions.preferredScheme = preferredScheme;
+    if (preferredXcodeproj) serverOptions.preferredXcodeproj = preferredXcodeproj;
+
+    const server = new XcodeServer(serverOptions);
+
+    const toolOptions: {
+      includeClean: boolean;
+      preferredScheme?: string;
+      preferredXcodeproj?: string;
+    } = { includeClean };
+
+    if (preferredScheme) toolOptions.preferredScheme = preferredScheme;
+    if (preferredXcodeproj) toolOptions.preferredXcodeproj = preferredXcodeproj;
+
+    const tools = getToolDefinitions(toolOptions);
     
     // Add global help command
     program
@@ -219,8 +307,14 @@ async function main(): Promise<void> {
         
         // Define command categories
         const buildAndRunCommands = [
-          'build', 'build-and-run', 'debug', 'stop', 
-          'get-run-destinations'
+          'build',
+          'build-and-run',
+          'release-lock',
+          'view-build-log',
+          'view-run-log',
+          'stop',
+          'get-run-destinations',
+          'release-all-locks',
         ];
         
         // Add clean only if not disabled
@@ -230,7 +324,6 @@ async function main(): Promise<void> {
         
         const categories = {
           'Project Management': [
-            'open-project', 'close-project', 'refresh-project', 
             'get-schemes', 'set-active-scheme', 'get-projects', 
             'get-workspace-info', 'open-file'
           ],
@@ -252,13 +345,23 @@ async function main(): Promise<void> {
         // Create a map of command name to tool for quick lookup
         const toolMap = new Map();
         for (const tool of tools) {
-          const commandName = tool.name.replace(/^xcode_/, '').replace(/_/g, '-');
+          const defaultName = tool.name.replace(/^xcode_/, '').replace(/_/g, '-');
+          const commandName = tool.cliName ?? defaultName;
           toolMap.set(commandName, tool);
+          if (tool.cliAliases) {
+            for (const alias of tool.cliAliases) {
+              toolMap.set(alias, tool);
+            }
+          }
+          if (!toolMap.has(defaultName)) {
+            toolMap.set(defaultName, tool);
+          }
         }
         
         // Add non-tool commands
         toolMap.set('help', { description: 'Show help information' });
         toolMap.set('list-tools', { description: 'List all available tools' });
+        toolMap.set('release-all-locks', { description: 'CLI-only: Force release every outstanding build/run lock' });
         
         // Display categorized commands
         for (const [category, commands] of Object.entries(categories)) {
@@ -279,14 +382,40 @@ async function main(): Promise<void> {
         console.log('⏱️  Note: Build, test, and run commands can take minutes to hours.');
         console.log('   The CLI handles long operations automatically - do not timeout.');
       });
-    
+
+    program
+      .command('release-all-locks')
+      .description('Force release every outstanding build/run lock (CLI-only safety valve)')
+      .action(async () => {
+        const { released, details } = await LockManager.releaseAllLocks();
+        if (released === 0) {
+          console.log('No active locks detected.');
+          return;
+        }
+        console.log(`Released ${released} lock${released === 1 ? '' : 's'}:`);
+        for (const detail of details) {
+          const reason = detail.reason ? `reason: "${detail.reason}"` : 'reason: n/a';
+          const waiting = Math.max(0, detail.queueDepth - 1);
+          const waitingMsg = waiting > 0 ? `, ${waiting} worker${waiting === 1 ? '' : 's'} were waiting` : '';
+          console.log(`  • ${detail.path} (${reason}${waitingMsg})`);
+        }
+      });
     // Dynamically create subcommands for each tool
     for (const tool of tools) {
+      if (tool.cliHidden) {
+        continue;
+      }
       // Convert tool name: remove "xcode_" prefix and replace underscores with dashes
-      const commandName = tool.name.replace(/^xcode_/, '').replace(/_/g, '-');
+      const commandName = tool.cliName ?? tool.name.replace(/^xcode_/, '').replace(/_/g, '-');
       const cmd = program
         .command(commandName)
         .description(tool.description);
+      
+      if (tool.cliAliases) {
+        for (const alias of tool.cliAliases) {
+          cmd.alias(alias);
+        }
+      }
       
       // Add options based on the tool's input schema
       if (tool.inputSchema?.properties) {
@@ -326,7 +455,8 @@ async function main(): Promise<void> {
               toolArgs = JSON.parse(cliArgs.jsonInput);
             } catch (error) {
               console.error('❌ Invalid JSON input:', error);
-              process.exit(1);
+              process.exitCode = 1;
+              return;
             }
           } else {
             toolArgs = parseToolArgs(tool, cliArgs);
@@ -342,7 +472,8 @@ async function main(): Promise<void> {
             if (error) {
               const output = formatResult(error, program.opts().json);
               console.error(output);
-              process.exit(1);
+              process.exitCode = 1;
+              return;
             }
             
             toolArgs.xcodeproj = resolvedPath;
@@ -367,67 +498,25 @@ async function main(): Promise<void> {
           }
           
           // Call the tool directly on server
-          const result = await server.callToolDirect(tool.name, toolArgs);
-          
-          // Check if the result indicates an error
-          let hasError = false;
-          if (result?.content && Array.isArray(result.content)) {
-            for (const item of result.content) {
-              if (item.type === 'text' && item.text) {
-                const text = item.text;
-                
-                // Special case for health-check: don't treat degraded mode as error
-                if (tool.name === 'xcode_health_check') {
-                  // Only treat as error if there are critical failures
-                  hasError = text.includes('⚠️  CRITICAL ERRORS DETECTED') || 
-                            text.includes('❌ OS:') || 
-                            text.includes('❌ OSASCRIPT:');
-                } else if (tool.name === 'xcode_test') {
-                  // Special case for test results: check if tests actually failed
-                  if (text.includes('✅ All tests passed!')) {
-                    hasError = false;
-                  } else {
-                    // Look for actual test failures or build errors
-                    hasError = text.includes('❌ TEST BUILD FAILED') ||
-                              text.includes('❌ TESTS FAILED') ||
-                              text.includes('⏹️ TEST BUILD INTERRUPTED') ||
-                              (text.includes('Failed:') && !text.includes('Failed: 0'));
-                  }
-                } else {
-                  // Check for common error patterns
-                  if (text.includes('❌') || 
-                      text.includes('does not exist') ||
-                      text.includes('failed') ||
-                      text.includes('error') ||
-                      text.includes('Error') ||
-                      text.includes('missing required parameter') ||
-                      text.includes('cannot find') ||
-                      text.includes('not found') ||
-                      text.includes('invalid') ||
-                      text.includes('Invalid')) {
-                    hasError = true;
-                    break;
-                  }
-                }
-              }
-            }
-          }
-          
+          let result = await server.callToolDirect(tool.name, toolArgs);
+
           // Output the result
           const output = formatResult(result, program.opts().json);
+          const hasError = detectError(tool.name, result);
           if (hasError) {
             console.error(output);
           } else {
             console.log(output);
           }
           
-          // Exit with appropriate code
-          process.exit(hasError ? 1 : 0);
+          // Exit with appropriate code without forcing an immediate shutdown (allows stdout flush)
+          process.exitCode = hasError ? 1 : 0;
+          return;
           
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           console.error(`❌ ${tool.name} failed:`, errorMsg);
-          process.exit(1);
+          process.exitCode = 1;
         }
       });
     }
@@ -450,7 +539,7 @@ if (process.env.NODE_ENV !== 'test' || process.argv[1]?.includes('cli.js')) {
   main().catch((error) => {
     Logger.error('CLI execution failed:', error);
     console.error('❌ CLI execution failed:', error);
-    process.exit(1);
+    process.exitCode = 1;
   });
 }
 

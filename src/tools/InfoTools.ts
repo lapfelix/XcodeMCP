@@ -1,5 +1,5 @@
 import { JXAExecutor } from '../utils/JXAExecutor.js';
-import { PathValidator } from '../utils/PathValidator.js';
+import PathValidator from '../utils/PathValidator.js';
 import { getWorkspaceByPathScript } from '../utils/JXAHelpers.js';
 import type { McpResult, OpenProjectCallback } from '../types/index.js';
 
@@ -78,3 +78,5 @@ export class InfoTools {
     return { content: [{ type: 'text', text: result }] };
   }
 }
+
+export default InfoTools;

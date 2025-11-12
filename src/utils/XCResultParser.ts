@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { Logger } from './Logger.js';
+import Logger from './Logger.js';
 import type { TestAttachment } from '../types/index.js';
 
 // Data models based on XCResultExplorer
@@ -164,8 +164,16 @@ export class XCResultParser {
       const hasInfoPlist = existsSync(infoPlistPath);
       const hasDatabase = existsSync(databasePath);
       const hasData = existsSync(dataPath);
+
+      // Xcode 16+ no longer writes database.sqlite3 for lightweight xcresult bundles.
+      const essentialFilesReady = hasInfoPlist && hasData;
       
-      if (hasInfoPlist && hasDatabase && hasData) {
+      if (essentialFilesReady) {
+        if (!hasDatabase) {
+          Logger.info('database.sqlite3 not present – continuing (new XCResult format)');
+        } else {
+          Logger.info('database.sqlite3 detected');
+        }
         Logger.info('All essential XCResult files are present - ready for stabilization check');
         
         // Fast-path for small XCResult files - skip extensive waiting for files < 5MB
@@ -184,18 +192,26 @@ export class XCResultParser {
       
       // Log progress every 30 seconds
       if (Date.now() - lastProgressTime >= 30000) {
-        Logger.info(`Still waiting for XCResult files - Info.plist: ${hasInfoPlist ? '✓' : '✗'}, database.sqlite3: ${hasDatabase ? '✓' : '✗'}, Data: ${hasData ? '✓' : '✗'}`);
+        Logger.info(`Still waiting for XCResult files - Info.plist: ${hasInfoPlist ? '✓' : '✗'}, Data: ${hasData ? '✓' : '✗'}, database.sqlite3: ${hasDatabase ? '✓' : 'optional'}`);
         lastProgressTime = Date.now();
       }
       
       await new Promise(resolve => setTimeout(resolve, 3000)); // Check every 3 seconds
     }
     
-    if (!existsSync(infoPlistPath) || !existsSync(databasePath) || !existsSync(dataPath)) {
+    const hasInfoPlistFinal = existsSync(infoPlistPath);
+    const hasDataFinal = existsSync(dataPath);
+    const hasDatabaseFinal = existsSync(databasePath);
+
+    if (!hasInfoPlistFinal || !hasDataFinal) {
       const elapsed = Math.round((Date.now() - startTime) / 60000);
       Logger.error(`Essential XCResult files did not appear after ${elapsed} minutes`);
       Logger.error(`This suggests Xcode encountered a serious issue writing the XCResult`);
       return false;
+    }
+
+    if (!hasDatabaseFinal) {
+      Logger.info('Proceeding without database.sqlite3 (not present in this XCResult bundle)');
     }
     
     // Phase 3: Critical stabilization check - wait until sizes haven't changed for N seconds
@@ -215,23 +231,37 @@ export class XCResultParser {
     
     let previousSizes: Record<string, number> = {};
     let stableStartTime: number | null = null;
+    const includeDatabase = existsSync(databasePath);
     
     while (Date.now() - startTime < timeoutMs) {
       try {
         const infoPlistStats = await stat(infoPlistPath);
-        const databaseStats = await stat(databasePath);
         const dataStats = await stat(dataPath);
+        let databaseSize = 0;
+        if (includeDatabase) {
+          try {
+            const databaseStats = await stat(databasePath);
+            databaseSize = databaseStats.size;
+          } catch (dbError) {
+            Logger.debug(`Error checking database size: ${dbError}`);
+            // Treat missing/locked database as instability
+            stableStartTime = null;
+            previousSizes = {};
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            continue;
+          }
+        }
         
         const currentSizes = {
           infoPlist: infoPlistStats.size,
-          database: databaseStats.size,
-          data: dataStats.size
+          data: dataStats.size,
+          ...(includeDatabase ? { database: databaseSize } : {})
         };
         
         const sizesMatch = (
           previousSizes.infoPlist === currentSizes.infoPlist &&
-          previousSizes.database === currentSizes.database &&
-          previousSizes.data === currentSizes.data
+          previousSizes.data === currentSizes.data &&
+          (!includeDatabase || previousSizes.database === currentSizes.database)
         );
         
         if (sizesMatch && Object.keys(previousSizes).length > 0) {
@@ -252,7 +282,8 @@ export class XCResultParser {
           // Sizes changed - reset stability timer
           if (stableStartTime !== null) {
             Logger.info(`File sizes changed - restarting stability check`);
-            Logger.debug(`New sizes - Info.plist: ${currentSizes.infoPlist}, database: ${currentSizes.database}, Data: ${currentSizes.data}`);
+            const databaseLog = includeDatabase ? `, database: ${currentSizes.database}` : '';
+            Logger.debug(`New sizes - Info.plist: ${currentSizes.infoPlist}${databaseLog}, Data: ${currentSizes.data}`);
           }
           stableStartTime = null;
         }
@@ -415,13 +446,14 @@ export class XCResultParser {
       const extractTests = (nodes: any[], depth = 0) => {
         for (const node of nodes) {
           // Only include actual test methods (not test classes/suites)
-          if (node.nodeType === 'Test Case' && node.name && node.result) {
+          const normalizedResult = this.normalizeResult(node.result);
+          if (node.nodeType === 'Test Case' && node.name && normalizedResult) {
             const testInfo = {
               name: node.name,
               id: node.nodeIdentifier || 'unknown'
             };
-            
-            const result = node.result.toLowerCase();
+
+            const result = normalizedResult.toLowerCase();
             if (result === 'failed') {
               failedTests.push(testInfo);
             } else if (result === 'passed') {
@@ -670,7 +702,8 @@ export class XCResultParser {
     output += `Name: ${testNode.name}\n`;
     output += `ID: ${testNode.nodeIdentifier || 'unknown'}\n`;
     output += `Type: ${testNode.nodeType}\n`;
-    output += `Result: ${this.getStatusIcon(testNode.result)} ${testNode.result}\n`;
+    const testResultDisplay = this.normalizeResult(testNode.result) || 'Unknown';
+    output += `Result: ${this.getStatusIcon(testNode.result)} ${testResultDisplay}\n`;
     
     if (testNode.duration) {
       output += `Duration: ${testNode.duration}\n`;
@@ -678,7 +711,7 @@ export class XCResultParser {
     output += '\n';
     
     // Show failure details if test failed
-    if (testNode.result.toLowerCase().includes('fail')) {
+    if (this.normalizeResult(testNode.result).toLowerCase().includes('fail')) {
       const failure = analysis.summary.testFailures.find(f => f.testIdentifierString === testNode.nodeIdentifier);
       if (failure) {
         output += `❌ Failure Details:\n`;
@@ -979,9 +1012,10 @@ export class XCResultParser {
     
     if (node.nodeType === 'Test Case') {
       total = 1;
-      if (node.result.toLowerCase().includes('pass') || node.result.toLowerCase().includes('success')) {
+      const lowerResult = this.normalizeResult(node.result).toLowerCase();
+      if (lowerResult.includes('pass') || lowerResult.includes('success')) {
         passed = 1;
-      } else if (node.result.toLowerCase().includes('fail')) {
+      } else if (lowerResult.includes('fail')) {
         failed = 1;
       }
     } else if (node.children) {
@@ -1047,8 +1081,15 @@ export class XCResultParser {
     return search(nodes);
   }
 
-  private getStatusIcon(result: string): string {
-    const lowerResult = result.toLowerCase();
+  private normalizeResult(result: string | null | undefined): string {
+    if (typeof result === 'string') {
+      return result;
+    }
+    return '';
+  }
+
+  private getStatusIcon(result?: string | null): string {
+    const lowerResult = this.normalizeResult(result).toLowerCase();
     if (lowerResult.includes('pass') || lowerResult.includes('success')) {
       return '✅';
     } else if (lowerResult.includes('fail')) {

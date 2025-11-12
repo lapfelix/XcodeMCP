@@ -31,7 +31,7 @@ describe('CLI Integration Tests', () => {
     
     expect(stdout).toContain('Available tools organized by category:');
     expect(stdout).toContain('📁 Project Management:');
-    expect(stdout).toContain('open-project');
+    expect(stdout).toContain('get-schemes');
     expect(stdout).toContain('build');
     expect(stdout).toContain('health-check');
   });
@@ -106,7 +106,8 @@ describe('CLI Integration Tests', () => {
         CLI_PATH,
         'build',
         '--xcodeproj', '/non/existent/project.xcodeproj',
-        '--scheme', 'Test'
+        '--scheme', 'Test',
+        '--reason', 'CLI integration test',
       ])
     ).rejects.toMatchObject({
       exitCode: 1,
@@ -132,8 +133,7 @@ describe('CLI Integration Tests', () => {
     const { stdout } = await execa('node', [CLI_PATH, 'list-tools']);
     
     // Tool names in list-tools output show CLI command names
-    expect(stdout).toContain('open-project');
-    expect(stdout).toContain('close-project');
+    expect(stdout).toContain('get-schemes');
     expect(stdout).toContain('build');
   });
 
