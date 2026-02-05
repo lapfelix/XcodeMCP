@@ -1,3 +1,5 @@
+> **Using with Apple's Official Xcode MCP**: Apple now provides an [official Xcode MCP server](https://developer.apple.com/documentation/xcode/giving-agentic-coding-tools-access-to-xcode). XcodeMCP can run alongside it in **sidekick mode** (`--sidekick-only`), providing complementary tools like project management and XCResult analysis. In a future version, XcodeMCP will transition to sidekick-only mode by default. [See configuration below](#sidekick-mode).
+
 # XcodeMCP
 
 [![npm version](https://img.shields.io/npm/v/xcodemcp.svg)](https://www.npmjs.com/package/xcodemcp)
@@ -113,6 +115,47 @@ With preferred values configured:
 #### Troubleshooting
 
 If `/mcp` in Claude Code indicates the MCP failed, try running it from the project folder manually to see what the output is: `npx -y xcodemcp@latest`
+
+### Sidekick Mode
+
+When using XcodeMCP alongside [Apple's official Xcode MCP server](https://developer.apple.com/documentation/xcode/giving-agentic-coding-tools-access-to-xcode), enable sidekick mode to only include complementary tools:
+
+- **Project management**: Open/close projects, manage schemes, workspace info
+- **XCResult analysis**: Browse test results, extract screenshots, inspect UI hierarchies
+
+This excludes build/run/test/debug tools that Apple's MCP handles natively.
+
+#### Claude Code CLI Setup (Both Servers)
+
+First, enable Xcode Tools in Xcode > Settings > Intelligence > Model Context Protocol.
+
+Then add both Apple's Xcode MCP and XcodeMCP in sidekick mode:
+```bash
+# Add Apple's official Xcode MCP
+claude mcp add --transport stdio xcode -- xcrun mcpbridge
+
+# Add XcodeMCP in sidekick mode (project management + XCResult analysis)
+claude mcp add-json xcodemcp '{"command": "npx", "args": ["-y", "xcodemcp@latest", "--sidekick-only"]}'
+```
+
+#### JSON Configuration (Both Servers)
+
+```json
+{
+  "mcpServers": {
+    "xcode": {
+      "command": "xcrun",
+      "args": ["mcpbridge"]
+    },
+    "xcodemcp": {
+      "command": "npx",
+      "args": ["-y", "xcodemcp@latest", "--sidekick-only"]
+    }
+  }
+}
+```
+
+> **Future direction**: In a future version, XcodeMCP will transition to sidekick-only mode by default, focusing exclusively on tools that complement Apple's official Xcode MCP rather than duplicating functionality.
 
 ### Development Setup
 

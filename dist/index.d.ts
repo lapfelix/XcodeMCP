@@ -5,6 +5,7 @@ export declare class XcodeMCPServer extends XcodeServer {
         includeClean?: boolean;
         preferredScheme?: string;
         preferredXcodeproj?: string;
+        sidekickOnly?: boolean;
     });
     start(port?: number): Promise<void>;
 }

@@ -17,16 +17,21 @@ export class XcodeServer {
     includeClean;
     preferredScheme;
     preferredXcodeproj;
+    sidekickOnly;
     constructor(options = {}) {
         this.includeClean = options.includeClean ?? true;
         this.preferredScheme = options.preferredScheme;
         this.preferredXcodeproj = options.preferredXcodeproj;
+        this.sidekickOnly = options.sidekickOnly ?? false;
         // Log preferred values if set
         if (this.preferredScheme) {
             Logger.info(`Using preferred scheme: ${this.preferredScheme}`);
         }
         if (this.preferredXcodeproj) {
             Logger.info(`Using preferred xcodeproj: ${this.preferredXcodeproj}`);
+        }
+        if (this.sidekickOnly) {
+            Logger.info('Running in sidekick mode - build/run/test tools excluded (use Apple\'s Xcode MCP for those)');
         }
         this.server = new Server({
             name: 'xcode-mcp-server',
@@ -253,6 +258,8 @@ export class XcodeServer {
                 toolOptions.preferredScheme = this.preferredScheme;
             if (this.preferredXcodeproj)
                 toolOptions.preferredXcodeproj = this.preferredXcodeproj;
+            if (this.sidekickOnly)
+                toolOptions.sidekickOnly = this.sidekickOnly;
             const toolDefinitions = getToolDefinitions(toolOptions);
             return {
                 tools: toolDefinitions.map(tool => ({

@@ -5,14 +5,32 @@ export interface ToolDefinition {
 }
 
 /**
- * Get all tool definitions shared between CLI and MCP
+ * Tools that overlap with Apple's official Xcode MCP and should be excluded in sidekick mode.
+ * These are build, run, test, debug, and stop operations that Apple's MCP handles natively.
  */
-export function getToolDefinitions(options: { 
+const BUILD_TOOLS = [
+  'xcode_build',
+  'xcode_clean',
+  'xcode_test',
+  'xcode_build_and_run',
+  'xcode_debug',
+  'xcode_stop',
+  'xcode_get_run_destinations',
+];
+
+/**
+ * Get all tool definitions shared between CLI and MCP
+ *
+ * @param options.sidekickOnly - When true, only returns tools that complement Apple's official
+ *   Xcode MCP (project management and XCResult inspection tools). Excludes build/run/test/debug tools.
+ */
+export function getToolDefinitions(options: {
   includeClean?: boolean;
   preferredScheme?: string;
   preferredXcodeproj?: string;
+  sidekickOnly?: boolean;
 } = { includeClean: true }): ToolDefinition[] {
-  const { includeClean = true, preferredScheme, preferredXcodeproj } = options;
+  const { includeClean = true, preferredScheme, preferredXcodeproj, sidekickOnly = false } = options;
   const tools: ToolDefinition[] = [
     {
       name: 'xcode_open_project',
@@ -533,7 +551,7 @@ export function getToolDefinitions(options: {
         properties: {
           xcodeproj: {
             type: 'string',
-            description: preferredXcodeproj 
+            description: preferredXcodeproj
               ? `Absolute path to the .xcodeproj file (or .xcworkspace if available) - defaults to ${preferredXcodeproj}`
               : 'Absolute path to the .xcodeproj file (or .xcworkspace if available) - e.g., /path/to/project.xcodeproj',
           },
@@ -541,6 +559,11 @@ export function getToolDefinitions(options: {
         required: preferredXcodeproj ? [] : ['xcodeproj'],
       },
     });
+  }
+
+  // In sidekick mode, filter out build/run/test tools that overlap with Apple's Xcode MCP
+  if (sidekickOnly) {
+    return tools.filter(tool => !BUILD_TOOLS.includes(tool.name));
   }
 
   return tools;

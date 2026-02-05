@@ -35,10 +35,11 @@ process.on('SIGINT', () => {
 });
 
 export class XcodeMCPServer extends XcodeServer {
-  constructor(options: { 
+  constructor(options: {
     includeClean?: boolean;
     preferredScheme?: string;
     preferredXcodeproj?: string;
+    sidekickOnly?: boolean;
   } = {}) {
     super(options);
   }
@@ -203,22 +204,27 @@ if (process.env.NODE_ENV !== 'test') {
   // Check for --no-clean argument
   const noCleanArg = process.argv.includes('--no-clean');
   const includeClean = !noCleanArg;
-  
+
+  // Check for --sidekick-only argument (excludes build/run/test tools that overlap with Apple's Xcode MCP)
+  const sidekickOnly = process.argv.includes('--sidekick-only');
+
   // Check for preferred values from environment variables or command-line arguments
-  const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME || 
+  const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME ||
     process.argv.find(arg => arg.startsWith('--preferred-scheme='))?.split('=')[1];
-  
-  const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ || 
+
+  const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ ||
     process.argv.find(arg => arg.startsWith('--preferred-xcodeproj='))?.split('=')[1];
-  
+
   const serverOptions: {
     includeClean: boolean;
     preferredScheme?: string;
     preferredXcodeproj?: string;
+    sidekickOnly?: boolean;
   } = { includeClean };
-  
+
   if (preferredScheme) serverOptions.preferredScheme = preferredScheme;
   if (preferredXcodeproj) serverOptions.preferredXcodeproj = preferredXcodeproj;
+  if (sidekickOnly) serverOptions.sidekickOnly = sidekickOnly;
   
   const server = new XcodeMCPServer(serverOptions);
   

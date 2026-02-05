@@ -129,21 +129,26 @@ async function main(): Promise<void> {
     // Check for --no-clean argument early to configure both server and tools
     const noCleanArg = process.argv.includes('--no-clean');
     const includeClean = !noCleanArg;
-    
+
+    // Check for --sidekick-only argument (excludes build/run/test tools)
+    const sidekickOnly = process.argv.includes('--sidekick-only');
+
     // Parse preferred values from command-line or environment
-    const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME || 
+    const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME ||
       process.argv.find(arg => arg.startsWith('--preferred-scheme='))?.split('=')[1];
-    const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ || 
+    const preferredXcodeproj = process.env.XCODE_MCP_PREFERRED_XCODEPROJ ||
       process.argv.find(arg => arg.startsWith('--preferred-xcodeproj='))?.split('=')[1];
-    
+
     const serverOptions: {
       includeClean: boolean;
       preferredScheme?: string;
       preferredXcodeproj?: string;
+      sidekickOnly?: boolean;
     } = { includeClean };
-    
+
     if (preferredScheme) serverOptions.preferredScheme = preferredScheme;
     if (preferredXcodeproj) serverOptions.preferredXcodeproj = preferredXcodeproj;
+    if (sidekickOnly) serverOptions.sidekickOnly = sidekickOnly;
     
     const server = new XcodeServer(serverOptions);
     
@@ -152,11 +157,13 @@ async function main(): Promise<void> {
       includeClean: boolean;
       preferredScheme?: string;
       preferredXcodeproj?: string;
+      sidekickOnly?: boolean;
     } = { includeClean };
-    
+
     if (preferredScheme) toolOptions.preferredScheme = preferredScheme;
     if (preferredXcodeproj) toolOptions.preferredXcodeproj = preferredXcodeproj;
-    
+    if (sidekickOnly) toolOptions.sidekickOnly = sidekickOnly;
+
     const tools = getToolDefinitions(toolOptions);
     
     // Build description with preferred values if set
@@ -189,7 +196,8 @@ async function main(): Promise<void> {
 💡 Use 'xcodecontrol list-tools' to see all commands organized by category
 💡 Use 'xcodecontrol <command> --help' for detailed help on any command
 
-🚫 Use 'xcodecontrol --no-clean' to disable the clean tool for safety`;
+🚫 Use 'xcodecontrol --no-clean' to disable the clean tool for safety
+🤝 Use 'xcodecontrol --sidekick-only' to exclude build/run/test tools (for use alongside Apple's Xcode MCP)`;
     
     const program = new Command('xcodecontrol')
       .version(pkg.version)
@@ -198,6 +206,7 @@ async function main(): Promise<void> {
       .option('-v, --verbose', 'Enable verbose output (shows INFO logs)', false)
       .option('-q, --quiet', 'Suppress all logs except errors', false)
       .option('--no-clean', 'Disable the clean tool', false)
+      .option('--sidekick-only', 'Only include tools that complement Apple\'s Xcode MCP (project management, XCResult inspection)', false)
       .option('--preferred-scheme <scheme>', 'Set a preferred scheme to use as default')
       .option('--preferred-xcodeproj <path>', 'Set a preferred xcodeproj/xcworkspace to use as default');
     
@@ -214,40 +223,48 @@ async function main(): Promise<void> {
       .command('list-tools')
       .description('List all available tools')
       .action(() => {
-        console.log('Available tools organized by category:');
-        console.log('');
-        
-        // Define command categories
-        const buildAndRunCommands = [
-          'build', 'build-and-run', 'debug', 'stop', 
-          'get-run-destinations'
-        ];
-        
-        // Add clean only if not disabled
-        if (includeClean) {
-          buildAndRunCommands.splice(1, 0, 'clean'); // Insert clean after build
+        if (sidekickOnly) {
+          console.log('Available tools in sidekick mode (complementing Apple\'s Xcode MCP):');
+        } else {
+          console.log('Available tools organized by category:');
         }
-        
-        const categories = {
-          'Project Management': [
-            'open-project', 'close-project', 'refresh-project', 
-            'get-schemes', 'set-active-scheme', 'get-projects', 
-            'get-workspace-info', 'open-file'
-          ],
-          'Build & Run': buildAndRunCommands,
-          'Testing': [
-            'test', 'get-test-targets'
-          ],
-          'Test Results Analysis': [
-            'find-xcresults', 'xcresult-browse', 'xcresult-summary',
-            'xcresult-browser-get-console', 'xcresult-get-screenshot',
-            'xcresult-get-ui-hierarchy', 'xcresult-get-ui-element',
-            'xcresult-list-attachments', 'xcresult-export-attachment'
-          ],
-          'System & Diagnostics': [
-            'health-check', 'list-tools', 'help'
-          ]
-        };
+        console.log('');
+
+        // Define command categories based on mode
+        const categories: Record<string, string[]> = {};
+
+        categories['Project Management'] = [
+          'open-project', 'close-project', 'refresh-project',
+          'get-schemes', 'set-active-scheme', 'get-projects',
+          'get-workspace-info', 'open-file'
+        ];
+
+        // Add build/run/test categories only if not in sidekick mode
+        if (!sidekickOnly) {
+          const buildAndRunCommands = [
+            'build', 'build-and-run', 'debug', 'stop',
+            'get-run-destinations'
+          ];
+
+          // Add clean only if not disabled
+          if (includeClean) {
+            buildAndRunCommands.splice(1, 0, 'clean'); // Insert clean after build
+          }
+
+          categories['Build & Run'] = buildAndRunCommands;
+          categories['Testing'] = ['test', 'get-test-targets'];
+        }
+
+        categories['Test Results Analysis'] = [
+          'find-xcresults', 'xcresult-browse', 'xcresult-summary',
+          'xcresult-browser-get-console', 'xcresult-get-screenshot',
+          'xcresult-get-ui-hierarchy', 'xcresult-get-ui-element',
+          'xcresult-list-attachments', 'xcresult-export-attachment'
+        ];
+
+        categories['System & Diagnostics'] = [
+          'health-check', 'list-tools', 'help'
+        ];
         
         // Create a map of command name to tool for quick lookup
         const toolMap = new Map();

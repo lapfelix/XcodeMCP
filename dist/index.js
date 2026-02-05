@@ -185,6 +185,8 @@ if (process.env.NODE_ENV !== 'test') {
     // Check for --no-clean argument
     const noCleanArg = process.argv.includes('--no-clean');
     const includeClean = !noCleanArg;
+    // Check for --sidekick-only argument (excludes build/run/test tools that overlap with Apple's Xcode MCP)
+    const sidekickOnly = process.argv.includes('--sidekick-only');
     // Check for preferred values from environment variables or command-line arguments
     const preferredScheme = process.env.XCODE_MCP_PREFERRED_SCHEME ||
         process.argv.find(arg => arg.startsWith('--preferred-scheme='))?.split('=')[1];
@@ -195,6 +197,8 @@ if (process.env.NODE_ENV !== 'test') {
         serverOptions.preferredScheme = preferredScheme;
     if (preferredXcodeproj)
         serverOptions.preferredXcodeproj = preferredXcodeproj;
+    if (sidekickOnly)
+        serverOptions.sidekickOnly = sidekickOnly;
     const server = new XcodeMCPServer(serverOptions);
     // Check for port argument
     const portArg = process.argv.find(arg => arg.startsWith('--port='));
